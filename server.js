@@ -287,7 +287,12 @@ io.on('connection', (socket) => {
     socket.join(room.code);
   }
 
-  socket.on('createRoom', ({ name } = {}, cb) => {
+  const cleanAvatar = (a) => {
+    a = String(a || '').trim();
+    return a && a.length <= 8 ? a : null;
+  };
+
+  socket.on('createRoom', ({ name, avatar } = {}, cb) => {
     name = String(name || '').trim().slice(0, 16);
     if (!name) return cb && cb({ error: 'Pon tu nombre' });
     if (rooms.size >= 500) return cb && cb({ error: 'El servidor está lleno, prueba más tarde' });
@@ -295,7 +300,7 @@ io.on('connection', (socket) => {
     rooms.set(room.code, room);
     const playerId = crypto.randomUUID();
     const secret = crypto.randomUUID();
-    room.game.addPlayer(playerId, name);
+    room.game.addPlayer(playerId, name, cleanAvatar(avatar));
     room.hostId = playerId;
     room.tokens.set(playerId, secret);
     bind(room, playerId);
@@ -304,7 +309,7 @@ io.on('connection', (socket) => {
     cb && cb({ ok: true, code: room.code, playerId, secret });
   });
 
-  socket.on('joinRoom', ({ code, name } = {}, cb) => {
+  socket.on('joinRoom', ({ code, name, avatar } = {}, cb) => {
     code = String(code || '').trim().toUpperCase();
     name = String(name || '').trim().slice(0, 16);
     const room = rooms.get(code);
@@ -316,7 +321,7 @@ io.on('connection', (socket) => {
     }
     const playerId = crypto.randomUUID();
     const secret = crypto.randomUUID();
-    const p = room.game.addPlayer(playerId, name);
+    const p = room.game.addPlayer(playerId, name, cleanAvatar(avatar));
     if (!p) return cb && cb({ error: 'La sala está llena (máx. 10)' });
     room.tokens.set(playerId, secret);
     bind(room, playerId);
@@ -361,6 +366,10 @@ io.on('connection', (socket) => {
       s.targetCards = +opts.targetCards;
     }
     if (typeof opts.allowSteal === 'boolean') s.allowSteal = opts.allowSteal;
+    if ([30, 60, 90].includes(+opts.placeSeconds)) s.placeSeconds = +opts.placeSeconds;
+    if ([0, 2].includes(+opts.yearMargin)) s.yearMargin = +opts.yearMargin;
+    if (['all', 'classic', 'middle', 'modern'].includes(opts.era)) s.era = opts.era;
+    if (['all', 'es'].includes(opts.lang)) s.lang = opts.lang;
     const r = room.game.start();
     if (r.error) return fail(r.error);
     room.touch();
@@ -473,7 +482,7 @@ io.on('connection', (socket) => {
     // Se conservan también los desconectados: pueden volver con su sesión, y
     // si no vuelven en 60 s el lobby los expulsa solo.
     for (const p of old.players) {
-      const np = room.game.addPlayer(p.id, p.name);
+      const np = room.game.addPlayer(p.id, p.name, p.avatar);
       if (np) {
         np.connected = p.connected;
         if (!p.connected) scheduleLobbyKick(room, p.id);
@@ -484,6 +493,23 @@ io.on('connection', (socket) => {
     room.audioLoading = false;
     room.touch();
     room.broadcast();
+  });
+
+  // Reacciones en vivo: un emoji que flota en las pantallas de todos.
+  let lastReact = 0;
+  socket.on('react', ({ emoji } = {}) => {
+    if (!joined) return;
+    const now = Date.now();
+    if (now - lastReact < 700) return; // antirrebote
+    lastReact = now;
+    emoji = String(emoji || '').slice(0, 8);
+    if (!emoji) return;
+    const { room, playerId } = joined;
+    const p = room.game.player(playerId);
+    if (!p) return;
+    const payload = { name: p.name, avatar: p.avatar, emoji };
+    for (const [, s] of room.sockets) s.emit('reaction', payload);
+    for (const s of room.screens) s.emit('reaction', payload);
   });
 
   socket.on('disconnect', () => {

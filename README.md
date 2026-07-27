@@ -24,6 +24,24 @@ adivina **en qué año salió** y colócala en tu línea de tiempo. Cada jugador
 
 Cada jugador empieza con 1 carta y 2 fichas. De 2 a 10 jugadores.
 
+### Opciones de partida (las elige el anfitrión)
+
+- **Cartas para ganar**: de 3 a 15.
+- **Tiempo por turno**: 90 s / 60 s / 30 s.
+- **Precisión del año**: exacta o ±2 años (modo casual).
+- **Canciones**: todas, clásicos (≤1989), 90s·2000s, o 2010 en adelante — y
+  filtro de **solo canciones en español**.
+- **Robos** activables o no.
+
+### Ambiente de fiesta
+
+Avatares emoji, anuncio animado de turno, cartas coloreadas por década con
+huecos que muestran el rango de años, **reacciones en vivo** que flotan en
+todas las pantallas, confeti en aciertos/robos/victoria, efectos de sonido
+sintetizados (silenciables), vibración en tu turno, **QR en el lobby** para
+unirse escaneando, y estadísticas por jugador al final (aciertos, robos y
+fichas ganadas).
+
 ### 📺 Modo pantalla (TV)
 
 Abre el juego en una tele, proyector o portátil, pulsa **«Modo pantalla (TV)»**

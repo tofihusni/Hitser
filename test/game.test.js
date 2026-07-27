@@ -4,16 +4,13 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { Game, fuzzyMatch, isCorrectGap, correctGaps, insertCard, normalize } = require('../lib/game');
 
-const SONGS = [
-  { title: 'A', artist: 'AA', year: 1960 },
-  { title: 'B', artist: 'BB', year: 1970 },
-  { title: 'C', artist: 'CC', year: 1980 },
-  { title: 'D', artist: 'DD', year: 1990 },
-  { title: 'E', artist: 'EE', year: 2000 },
-  { title: 'F', artist: 'FF', year: 2010 },
-  { title: 'G', artist: 'GG', year: 2020 },
-  { title: 'H', artist: 'HH', year: 1975 },
-];
+// 60 canciones repartidas entre 1950 y 2009, la mitad marcadas en español.
+const SONGS = Array.from({ length: 60 }, (_, i) => ({
+  title: `Canción ${i}`,
+  artist: `Artista ${i}`,
+  year: 1950 + i,
+  es: i % 2 === 0,
+}));
 
 // RNG determinista para tests reproducibles.
 function seededRng(seed = 42) {
@@ -244,6 +241,55 @@ test('viewFor oculta el año de la carta actual hasta revelar', () => {
   g.placeCard(p.id, correctGaps(p.timeline, g.currentCard.year)[0]);
   const v2 = g.viewFor('p1');
   assert.ok(v2.currentCard.year);
+});
+
+test('margen de ±2 años admite fallos pequeños y mantiene la línea ordenada', () => {
+  const g = newGame({ allowSteal: false, yearMargin: 2 });
+  g.start();
+  const p = g.activePlayer;
+  // Construye una línea conocida y una carta que falla por 2 años.
+  p.timeline = [{ songIndex: 0, title: 'x', artist: 'x', year: 1980 }];
+  g.currentCard = { songIndex: 1, title: 'y', artist: 'y', year: 1982 };
+  // Hueco 0 = "antes de 1980": incorrecto en exacto, correcto con margen 2.
+  g.placeCard(p.id, 0);
+  assert.strictEqual(g.lastResult.correct, true);
+  const years = p.timeline.map((c) => c.year);
+  assert.deepStrictEqual(years, [...years].sort((a, b) => a - b), 'la línea queda ordenada');
+});
+
+test('el filtro de idioma solo baraja canciones en español', () => {
+  const g = newGame({ lang: 'es', allowSteal: false });
+  assert.ok(g.start().ok);
+  for (const i of g.deck) assert.ok(g.songs[i].es, 'canción no española en la baraja');
+});
+
+test('el filtro de época restringe los años', () => {
+  const g = newGame({ era: 'classic', allowSteal: false });
+  assert.ok(g.start().ok);
+  for (const i of g.deck) assert.ok(g.songs[i].year <= 1989);
+});
+
+test('un filtro demasiado estrecho devuelve error', () => {
+  const g = newGame({ era: 'modern' }); // el set de prueba llega solo a 2010
+  assert.ok(g.start().error);
+});
+
+test('las estadísticas registran aciertos, fallos y robos', () => {
+  const g = newGame();
+  g.start();
+  const p = g.activePlayer;
+  const q = g.players.find((x) => x !== p);
+  let bad = -1;
+  for (let i = 0; i <= p.timeline.length; i++) {
+    if (!isCorrectGap(p.timeline, i, g.currentCard.year)) { bad = i; break; }
+  }
+  if (bad === -1) return;
+  g.placeCard(p.id, bad);
+  const goodGap = correctGaps(q.timeline, g.currentCard.year)[0];
+  g.stealBid(q.id, goodGap);
+  g.reveal();
+  assert.strictEqual(p.stats.wrong, 1);
+  assert.strictEqual(q.stats.steals, 1);
 });
 
 test('las canciones reales tienen datos válidos', () => {

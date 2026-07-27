@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0d0d17" />
+  <meta name="theme-color" content="#0a0a14" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Hitser · El juego musical</title>
@@ -11,17 +11,23 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
   <!-- ── Inicio ─────────────────────────────────────────── -->
   <section id="screen-home" class="screen active">
     <div class="hero">
-      <div class="logo">🎵</div>
+      <div class="logo-disc" aria-hidden="true">
+        <div class="logo-disc-inner">🎵</div>
+      </div>
       <h1>HITSER</h1>
-      <p class="tagline">¿Sabes cuándo salió cada canción?<br>Escucha, coloca y gana.</p>
+      <p class="tagline">Escucha la canción, adivina el año<br>y construye tu línea de tiempo musical.</p>
     </div>
     <div class="panel">
       <label for="inp-name">Tu nombre</label>
       <input id="inp-name" maxlength="16" placeholder="Ej: DJ Ana" autocomplete="nickname" />
-      <button id="btn-create" class="btn primary">🎧 Crear sala</button>
+      <label>Tu avatar</label>
+      <div id="avatar-row" class="avatar-row" role="radiogroup" aria-label="Avatar"></div>
+      <button id="btn-create" class="btn primary big">🎧 Crear sala</button>
       <div class="divider"><span>o únete a una</span></div>
       <input id="inp-code" maxlength="4" placeholder="CÓDIGO" class="code-input" autocomplete="off" />
       <button id="btn-join" class="btn secondary">🚪 Unirse a sala</button>
@@ -32,20 +38,47 @@
 
   <!-- ── Sala de espera ─────────────────────────────────── -->
   <section id="screen-lobby" class="screen">
-    <header class="topbar">
-      <span class="badge">SALA</span>
-      <span id="lobby-code" class="room-code">····</span>
+    <header class="topbar center">
+      <div>
+        <span class="badge">CÓDIGO DE SALA</span>
+        <div id="lobby-code" class="room-code">····</div>
+      </div>
     </header>
-    <p class="hint">Comparte el código para que se unan desde sus teléfonos</p>
+    <div id="qr-box" class="qr-box hidden">
+      <img id="qr-img" alt="QR para unirse" />
+      <p class="hint">Escanea para unirte</p>
+    </div>
     <ul id="lobby-players" class="player-list"></ul>
     <div id="lobby-settings" class="panel hidden">
       <label>Cartas para ganar: <b id="lbl-target">10</b></label>
       <input id="inp-target" type="range" min="3" max="15" value="10" />
+      <label>Tiempo por turno</label>
+      <div class="seg" id="seg-speed">
+        <button data-v="90">🐢 90 s</button>
+        <button data-v="60" class="on">🚶 60 s</button>
+        <button data-v="30">⚡ 30 s</button>
+      </div>
+      <label>Precisión del año</label>
+      <div class="seg" id="seg-margin">
+        <button data-v="0" class="on">🎯 Exacta</button>
+        <button data-v="2">😌 ±2 años</button>
+      </div>
+      <label>Canciones</label>
+      <div class="seg" id="seg-era">
+        <button data-v="all" class="on">Todas</button>
+        <button data-v="classic">≤1989</button>
+        <button data-v="middle">90s·00s</button>
+        <button data-v="modern">2010+</button>
+      </div>
+      <label class="check">
+        <input id="inp-lang" type="checkbox" />
+        Solo canciones en español
+      </label>
       <label class="check">
         <input id="inp-steal" type="checkbox" checked />
         Permitir robos (apostar 1 ficha a que otro falla)
       </label>
-      <button id="btn-start" class="btn primary">▶ Empezar partida</button>
+      <button id="btn-start" class="btn primary big">▶ Empezar partida</button>
     </div>
     <p id="lobby-wait" class="hint hidden">Esperando a que el anfitrión empiece…</p>
     <button id="btn-leave" class="btn ghost">Salir</button>
@@ -57,6 +90,7 @@
       <span id="game-code" class="room-code small">····</span>
       <span id="game-round" class="badge">Ronda 1</span>
       <div id="timerbar"><div id="timerfill"></div></div>
+      <button id="btn-mute" class="icon-btn" aria-label="Silenciar efectos">🔔</button>
     </header>
 
     <div id="players-strip"></div>
@@ -65,7 +99,10 @@
 
     <!-- Reproductor -->
     <div id="audio-box" class="audio-box hidden">
-      <div id="vinyl" class="vinyl"><div class="vinyl-label">🎵</div></div>
+      <div id="vinyl" class="vinyl">
+        <div class="vinyl-grooves"></div>
+        <div class="vinyl-label">🎵</div>
+      </div>
       <button id="btn-play" class="btn play">▶ Escuchar canción</button>
       <p id="no-audio" class="hint hidden"></p>
       <!-- Embed de Spotify: oculto durante el turno para no revelar la canción -->
@@ -84,8 +121,8 @@
         <p id="guess-sent" class="hint hidden">✅ Respuesta enviada</p>
       </details>
       <div class="token-actions">
-        <button id="btn-skip" class="btn ghost">🔁 Cambiar canción (1 🪙)</button>
-        <button id="btn-buy" class="btn ghost">💰 Comprarla (3 🪙)</button>
+        <button id="btn-skip" class="btn ghost">🔁 Otra canción · 1🪙</button>
+        <button id="btn-buy" class="btn ghost">💰 Comprarla · 3🪙</button>
       </div>
     </div>
 
@@ -94,7 +131,7 @@
       <p id="watch-msg" class="instruct"></p>
       <div id="watch-timeline" class="timeline readonly"></div>
       <div id="steal-offer" class="hidden">
-        <button id="btn-steal" class="btn danger">🏴‍☠️ ¡Robar! (1 🪙)</button>
+        <button id="btn-steal" class="btn danger big">🏴‍☠️ ¡Robar! · 1🪙</button>
         <p class="hint">Si falló y tú aciertas dónde va en TU línea, te la llevas</p>
       </div>
       <div id="steal-pick" class="hidden">
@@ -121,21 +158,39 @@
       <p id="reveal-extra" class="hint"></p>
       <button id="btn-next" class="btn primary hidden">➡ Siguiente turno</button>
     </div>
+
+    <!-- Barra de reacciones -->
+    <div id="react-bar" class="react-bar">
+      <button data-e="🔥">🔥</button>
+      <button data-e="😂">😂</button>
+      <button data-e="😱">😱</button>
+      <button data-e="👏">👏</button>
+      <button data-e="💃">💃</button>
+    </div>
   </section>
 
   <!-- ── Fin de partida ─────────────────────────────────── -->
   <section id="screen-over" class="screen">
     <div class="hero">
-      <div class="logo">🏆</div>
+      <div class="logo trophy">🏆</div>
       <h1 id="winner-name"></h1>
       <p class="tagline">¡ha completado su línea de tiempo!</p>
     </div>
     <p id="over-last" class="hint"></p>
     <ul id="ranking" class="player-list"></ul>
-    <button id="btn-again" class="btn primary hidden">🔄 Jugar otra vez</button>
+    <button id="btn-again" class="btn primary big hidden">🔄 Jugar otra vez</button>
     <button id="btn-home" class="btn ghost">Volver al inicio</button>
   </section>
 
+  <!-- Overlay de cambio de turno -->
+  <div id="turn-overlay" class="turn-overlay hidden">
+    <div class="turn-overlay-inner">
+      <div id="overlay-avatar" class="overlay-avatar">🎧</div>
+      <div id="overlay-text"></div>
+    </div>
+  </div>
+
+  <canvas id="fx" aria-hidden="true"></canvas>
   <div id="toast" class="toast hidden"></div>
 
   <script src="/socket.io/socket.io.js"></script>

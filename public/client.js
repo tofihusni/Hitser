@@ -11,6 +11,102 @@ let isScreen = false; // modo pantalla (TV): espectador sin jugador
 let timerInterval = null;
 let serverOffset = 0; // desfase entre el reloj del servidor y el del cliente
 let lastTurnKey = null; // detecta el cambio de turno para limpiar formularios
+let lastPhase = null; // detecta transiciones para sonidos y confeti
+
+// ── Avatares ────────────────────────────────────────────────────────────────
+const AVATARS = ['🎧', '🎸', '🎤', '🥁', '🎹', '🎺', '🪩', '🎷', '🌟', '🔥'];
+let myAvatar = localStorage.getItem('hitser_avatar') || AVATARS[Math.floor(Math.random() * AVATARS.length)];
+
+// ── Colores por década para las cartas ──────────────────────────────────────
+const DEC_COLORS = {
+  1950: '#c98f45', 1960: '#e0653f', 1970: '#d84a86', 1980: '#a44ae0',
+  1990: '#4a6ce0', 2000: '#2aa8b8', 2010: '#2ab86e', 2020: '#9bd42a',
+};
+function decadeOf(year) {
+  return Math.floor(year / 10) * 10;
+}
+
+// ── Efectos de sonido sintetizados (sin ficheros) ───────────────────────────
+let sfxCtx = null;
+let muted = localStorage.getItem('hitser_muted') === '1';
+function beep(seq) {
+  if (muted) return;
+  try {
+    sfxCtx = sfxCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = sfxCtx.currentTime;
+    for (const [freq, dur, at] of seq) {
+      const o = sfxCtx.createOscillator();
+      const g = sfxCtx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(0.16, t0 + at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      o.connect(g).connect(sfxCtx.destination);
+      o.start(t0 + at);
+      o.stop(t0 + at + dur + 0.05);
+    }
+  } catch { /* sin audio disponible */ }
+}
+const SFX = {
+  correct: () => beep([[523, 0.15, 0], [659, 0.15, 0.12], [784, 0.3, 0.24]]),
+  wrong: () => beep([[220, 0.3, 0], [185, 0.4, 0.15]]),
+  steal: () => beep([[330, 0.12, 0], [330, 0.12, 0.15], [440, 0.28, 0.3]]),
+  turn: () => beep([[440, 0.1, 0], [554, 0.16, 0.1]]),
+  win: () => beep([[523, 0.15, 0], [659, 0.15, 0.13], [784, 0.15, 0.26], [1047, 0.5, 0.39]]),
+};
+function vibrate(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* nada */ }
+}
+
+// ── Confeti (canvas propio, sin librerías) ──────────────────────────────────
+function confetti(count = 130, duration = 2600) {
+  const cv = $('fx');
+  const ctx = cv.getContext('2d');
+  cv.width = innerWidth;
+  cv.height = innerHeight;
+  const colors = ['#1ed760', '#ffc93c', '#ff2d78', '#7c5cff', '#2aa8b8', '#ffffff'];
+  const parts = Array.from({ length: count }, () => ({
+    x: Math.random() * cv.width,
+    y: -20 - Math.random() * cv.height * 0.4,
+    w: 6 + Math.random() * 6,
+    h: 8 + Math.random() * 8,
+    vy: 2.2 + Math.random() * 3.4,
+    vx: -1.4 + Math.random() * 2.8,
+    rot: Math.random() * Math.PI,
+    vr: -0.14 + Math.random() * 0.28,
+    color: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const t0 = performance.now();
+  (function frame(t) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (t - t0 < duration) requestAnimationFrame(frame);
+    else ctx.clearRect(0, 0, cv.width, cv.height);
+  })(t0);
+}
+
+// ── Overlay de cambio de turno ──────────────────────────────────────────────
+let overlayTimer = null;
+function showTurnOverlay(avatar, text) {
+  const ov = $('turn-overlay');
+  $('overlay-avatar').textContent = avatar;
+  $('overlay-text').textContent = text;
+  ov.classList.remove('hidden', 'out');
+  clearTimeout(overlayTimer);
+  overlayTimer = setTimeout(() => {
+    ov.classList.add('out');
+    setTimeout(() => ov.classList.add('hidden'), 320);
+  }, 1300);
+}
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
 function showScreen(id) {
@@ -211,18 +307,30 @@ function renderTimeline(el, player, { gaps = false, onGap = null, highlight = nu
   el.innerHTML = '';
   const tl = player.timeline;
   const addGap = (i) => {
+    const before = i > 0 ? tl[i - 1].year : null;
+    const after = i < tl.length ? tl[i].year : null;
+    const range =
+      before === null
+        ? `antes de ${after}`
+        : after === null
+          ? `después de ${before}`
+          : `${before}–${after}`;
     const b = document.createElement('button');
     b.className = 'gap-btn';
-    b.textContent = '+';
-    b.setAttribute('aria-label', `Colocar en posición ${i + 1}`);
+    b.innerHTML = `<span class="gplus">+</span><span class="grange"></span>`;
+    b.querySelector('.grange').textContent = range;
+    b.setAttribute('aria-label', `Colocar ${range}`);
     b.addEventListener('click', () => onGap(i));
     el.appendChild(b);
   };
   const addCard = (c) => {
     const d = document.createElement('div');
     d.className = 'tcard';
+    const dec = decadeOf(c.year);
+    d.style.setProperty('--dec', DEC_COLORS[dec] || '#7c5cff');
     if (highlight && c.songIndex === highlight) d.classList.add('new-card');
     d.innerHTML = `
+      <div class="tdecade">${String(dec).slice(2)}s</div>
       <div class="tyear">${c.year}</div>
       <div class="ttitle"></div>
       <div class="tartist"></div>`;
@@ -252,20 +360,32 @@ function render() {
 function renderLobby() {
   showScreen('screen-lobby');
   $('lobby-code').textContent = S.code;
+  // QR para unirse desde otros teléfonos (si el servicio de QR no carga, se oculta).
+  const qr = $('qr-img');
+  const joinUrl = `${location.origin}/?sala=${S.code}`;
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`;
+  if (qr.dataset.for !== S.code) {
+    qr.dataset.for = S.code;
+    qr.onload = () => $('qr-box').classList.remove('hidden');
+    qr.onerror = () => $('qr-box').classList.add('hidden');
+    qr.src = qrSrc;
+  }
   const ul = $('lobby-players');
   ul.innerHTML = '';
   for (const p of S.players) {
     const li = document.createElement('li');
     if (p.id === S.you) li.classList.add('me');
-    li.innerHTML = `<span>🎧</span><span class="pname"></span>
-      ${p.id === S.hostId ? '<span class="host-tag">★ anfitrión</span>' : ''}
+    if (!p.connected) li.style.opacity = '.45';
+    li.innerHTML = `<span class="pavatar"></span><span class="pname"></span>
+      ${p.id === S.hostId ? '<span class="host-tag">★ ANFITRIÓN</span>' : ''}
       <span class="right">${p.id === S.you ? 'tú' : ''}</span>`;
+    li.querySelector('.pavatar').textContent = p.avatar || '🎧';
     li.querySelector('.pname').textContent = p.name;
     ul.appendChild(li);
   }
   const isHost = S.you === S.hostId;
-  $('lobby-settings').classList.toggle('hidden', !isHost);
-  $('lobby-wait').classList.toggle('hidden', isHost);
+  $('lobby-settings').classList.toggle('hidden', !isHost || isScreen);
+  $('lobby-wait').classList.toggle('hidden', isHost && !isScreen);
   $('btn-start').disabled = S.players.length < 2;
   $('btn-start').textContent =
     S.players.length < 2 ? 'Faltan jugadores (mín. 2)' : '▶ Empezar partida';
@@ -287,7 +407,8 @@ function renderGame() {
     if (!p.connected) d.classList.add('offline');
     d.innerHTML = `<div class="pname"></div>
       <div class="pstats">🎴 ${p.cards}/${S.settings.targetCards} · 🪙 ${p.tokens}</div>`;
-    d.querySelector('.pname').textContent = p.name + (p.id === S.you ? ' (tú)' : '');
+    d.querySelector('.pname').textContent =
+      `${p.avatar || '🎧'} ${p.name}` + (p.id === S.you ? ' (tú)' : '');
     strip.appendChild(d);
   }
 
@@ -336,7 +457,7 @@ function renderGame() {
     for (const p of S.players) {
       const h = document.createElement('div');
       h.className = 'tvline-name' + (p.id === S.turnPlayerId ? ' active' : '');
-      h.textContent = `${p.id === S.turnPlayerId ? '🎯 ' : ''}${p.name} · 🎴 ${p.cards} · 🪙 ${p.tokens}`;
+      h.textContent = `${p.id === S.turnPlayerId ? '🎯 ' : ''}${p.avatar || ''} ${p.name} · 🎴 ${p.cards} · 🪙 ${p.tokens}`;
       cont.appendChild(h);
       const tl = document.createElement('div');
       tl.className = 'timeline readonly';
@@ -465,8 +586,10 @@ function renderGameOver() {
     const li = document.createElement('li');
     if (p.id === S.you) li.classList.add('me');
     const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}º`;
-    li.innerHTML = `<span>${medal}</span><span class="pname"></span>
-      <span class="right">🎴 ${p.cards} · 🪙 ${p.tokens}</span>`;
+    const st = p.stats || {};
+    li.innerHTML = `<span>${medal}</span><span class="pavatar"></span><span class="pname"></span>
+      <span class="right">🎴 ${p.cards} · ✅ ${st.correct || 0} · 🏴‍☠️ ${st.steals || 0} · 🪙 ${st.tokensEarned || 0}</span>`;
+    li.querySelector('.pavatar').textContent = p.avatar || '🎧';
     li.querySelector('.pname').textContent = p.name;
     ul.appendChild(li);
   });
@@ -476,21 +599,66 @@ function renderGameOver() {
 
 // ── Eventos de socket ───────────────────────────────────────────────────────
 socket.on('state', (state) => {
+  const prevPhase = S ? S.phase : null;
   S = state;
   isScreen = !!state.isScreen;
   if (state.now) serverOffset = state.now - Date.now();
   document.body.classList.toggle('screen-mode', isScreen);
-  // Nuevo turno: limpia el formulario del bonus y los paneles de robo.
+
+  // Nuevo turno: limpia formularios y anuncia a quién le toca.
   const turnKey = `${state.round}:${state.turnPlayerId}`;
   if (turnKey !== lastTurnKey) {
+    const isFirst = lastTurnKey === null;
     lastTurnKey = turnKey;
     $('inp-guess-artist').value = '';
     $('inp-guess-title').value = '';
     $('guess-box').removeAttribute('open');
     $('steal-pick').classList.add('hidden');
+    if (!isFirst && state.phase === 'placing' && state.turnPlayerId) {
+      const active = state.players.find((p) => p.id === state.turnPlayerId);
+      const mine = state.turnPlayerId === state.you;
+      showTurnOverlay(active ? active.avatar : '🎧', mine ? '¡Te toca!' : `Turno de ${active ? active.name : '?'}`);
+      SFX.turn();
+      if (mine) vibrate([90, 60, 90]);
+    }
   }
+
+  // Sonidos y confeti según el desenlace de la ronda.
+  if (state.phase !== prevPhase && prevPhase !== null) {
+    const r = state.lastResult;
+    if ((state.phase === 'reveal' || state.phase === 'gameover') && r && prevPhase !== 'reveal') {
+      if (r.correct) {
+        SFX.correct();
+        if (r.playerId === state.you) { confetti(70, 1800); vibrate(120); }
+      } else if (r.stealWinnerId) {
+        SFX.steal();
+        if (r.stealWinnerId === state.you) { confetti(70, 1800); vibrate([60, 40, 120]); }
+      } else {
+        SFX.wrong();
+        if (r.playerId === state.you) vibrate(220);
+      }
+    }
+    if (state.phase === 'gameover') {
+      SFX.win();
+      confetti(180, 3400);
+    }
+  }
+  lastPhase = state.phase;
+
   keepAwake();
   render();
+});
+
+// Reacciones flotantes de otros jugadores.
+socket.on('reaction', ({ name, emoji }) => {
+  const d = document.createElement('div');
+  d.className = 'float-emoji';
+  d.style.left = 8 + Math.random() * 80 + 'vw';
+  d.innerHTML = `<span class="who"></span>`;
+  d.prepend(document.createTextNode(emoji));
+  d.querySelector('.who').textContent = name;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 2700);
 });
 
 socket.on('errorMsg', (msg) => toast(msg));
@@ -527,10 +695,30 @@ socket.on('connect', () => {
 socket.on('disconnect', () => toast('Conexión perdida, reconectando…'));
 
 // ── Botones ─────────────────────────────────────────────────────────────────
+// Selector de avatar
+function renderAvatarRow() {
+  const row = $('avatar-row');
+  row.innerHTML = '';
+  for (const a of AVATARS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = a;
+    b.setAttribute('role', 'radio');
+    if (a === myAvatar) b.classList.add('on');
+    b.addEventListener('click', () => {
+      myAvatar = a;
+      localStorage.setItem('hitser_avatar', a);
+      renderAvatarRow();
+    });
+    row.appendChild(b);
+  }
+}
+renderAvatarRow();
+
 $('btn-create').addEventListener('click', () => {
   const name = $('inp-name').value.trim();
   if (!name) return toast('Pon tu nombre');
-  socket.emit('createRoom', { name }, (res) => {
+  socket.emit('createRoom', { name, avatar: myAvatar }, (res) => {
     if (res.error) return toast(res.error);
     session = { code: res.code, playerId: res.playerId, secret: res.secret };
     saveSession();
@@ -542,11 +730,41 @@ $('btn-join').addEventListener('click', () => {
   const code = $('inp-code').value.trim().toUpperCase();
   if (!name) return toast('Pon tu nombre');
   if (code.length !== 4) return toast('El código tiene 4 letras');
-  socket.emit('joinRoom', { code, name }, (res) => {
+  socket.emit('joinRoom', { code, name, avatar: myAvatar }, (res) => {
     if (res.error) return toast(res.error);
     session = { code: res.code, playerId: res.playerId, secret: res.secret };
     saveSession();
   });
+});
+
+// Selectores segmentados de los ajustes
+document.querySelectorAll('.seg').forEach((seg) => {
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    seg.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+    btn.classList.add('on');
+  });
+});
+const segVal = (id) => $(id).querySelector('.on').dataset.v;
+
+// Silenciar efectos de sonido
+function renderMute() {
+  $('btn-mute').textContent = muted ? '🔕' : '🔔';
+}
+renderMute();
+$('btn-mute').addEventListener('click', () => {
+  muted = !muted;
+  localStorage.setItem('hitser_muted', muted ? '1' : '0');
+  renderMute();
+  if (!muted) SFX.turn();
+});
+
+// Reacciones
+$('react-bar').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn || isScreen) return;
+  socket.emit('react', { emoji: btn.dataset.e });
 });
 
 $('btn-screen').addEventListener('click', () => {
@@ -566,6 +784,10 @@ $('btn-start').addEventListener('click', () => {
   socket.emit('startGame', {
     targetCards: +$('inp-target').value,
     allowSteal: $('inp-steal').checked,
+    placeSeconds: +segVal('seg-speed'),
+    yearMargin: +segVal('seg-margin'),
+    era: segVal('seg-era'),
+    lang: $('inp-lang').checked ? 'es' : 'all',
   });
 });
 
@@ -608,5 +830,12 @@ $('btn-steal').addEventListener('click', () => {
 $('inp-code').addEventListener('input', (e) => {
   e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
 });
+
+// Si llegas con un enlace/QR tipo ?sala=ABCD, el código viene puesto.
+const salaParam = new URLSearchParams(location.search).get('sala');
+if (salaParam && /^[A-Z]{4}$/i.test(salaParam)) {
+  $('inp-code').value = salaParam.toUpperCase();
+  $('inp-name').focus();
+}
 
 showScreen('screen-home');
