@@ -8,32 +8,49 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Hitser · El juego musical</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
 
   <!-- ── Inicio ─────────────────────────────────────────── -->
-  <section id="screen-home" class="screen active">
-    <div class="hero">
-      <div class="logo-disc" aria-hidden="true">
-        <div class="logo-disc-inner">🎵</div>
+  <section id="screen-home" class="screen active home">
+    <div class="home-wrap">
+      <div class="hero">
+        <div class="float-cards" aria-hidden="true">
+          <div class="fcard f1" style="--fc:#d84a86"><span>1975</span>Bohemian Rhapsody</div>
+          <div class="fcard f2" style="--fc:#a44ae0"><span>1987</span>La Bamba</div>
+          <div class="fcard f3" style="--fc:#2ab86e"><span>2017</span>Despacito</div>
+          <div class="fcard f4" style="--fc:#4a6ce0"><span>1993</span>Macarena</div>
+          <div class="fcard f5" style="--fc:#9bd42a"><span>2022</span>Quédate</div>
+        </div>
+        <div class="logo-disc" aria-hidden="true">
+          <div class="logo-disc-inner">🎵</div>
+        </div>
+        <h1>HITSER</h1>
+        <p class="tagline">Escucha la canción, adivina el año<br>y construye tu línea de tiempo musical.</p>
+        <div class="feature-pills" aria-hidden="true">
+          <span>📱 Cada uno con su móvil</span>
+          <span>🎵 Música real</span>
+          <span>🏆 2–10 jugadores</span>
+        </div>
       </div>
-      <h1>HITSER</h1>
-      <p class="tagline">Escucha la canción, adivina el año<br>y construye tu línea de tiempo musical.</p>
+      <div class="panel home-panel">
+        <label for="inp-name">Tu nombre</label>
+        <input id="inp-name" maxlength="16" placeholder="Ej: DJ Ana" autocomplete="nickname" />
+        <label>Tu avatar</label>
+        <div id="avatar-row" class="avatar-row" role="radiogroup" aria-label="Avatar"></div>
+        <button id="btn-create" class="btn primary big">🎧 Crear sala</button>
+        <div class="divider"><span>o únete a una</span></div>
+        <input id="inp-code" maxlength="4" placeholder="CÓDIGO" class="code-input" autocomplete="off" />
+        <button id="btn-join" class="btn secondary">🚪 Unirse a sala</button>
+        <button id="btn-screen" class="btn ghost">📺 Modo pantalla (TV)</button>
+        <p class="hint">Cada jugador entra desde su propio teléfono 📱</p>
+      </div>
     </div>
-    <div class="panel">
-      <label for="inp-name">Tu nombre</label>
-      <input id="inp-name" maxlength="16" placeholder="Ej: DJ Ana" autocomplete="nickname" />
-      <label>Tu avatar</label>
-      <div id="avatar-row" class="avatar-row" role="radiogroup" aria-label="Avatar"></div>
-      <button id="btn-create" class="btn primary big">🎧 Crear sala</button>
-      <div class="divider"><span>o únete a una</span></div>
-      <input id="inp-code" maxlength="4" placeholder="CÓDIGO" class="code-input" autocomplete="off" />
-      <button id="btn-join" class="btn secondary">🚪 Unirse a sala</button>
-      <button id="btn-screen" class="btn ghost">📺 Modo pantalla (TV)</button>
-    </div>
-    <p class="hint">Cada jugador entra desde su propio teléfono 📱</p>
   </section>
 
   <!-- ── Sala de espera ─────────────────────────────────── -->
