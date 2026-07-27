@@ -108,6 +108,28 @@ al modo pista sin cortar la partida.
 - Temporizadores de turno (60 s) y de robo (15 s) para que nadie bloquee la partida.
 - Las salas inactivas se limpian solas a las 2 horas.
 
+## Despliegue en internet
+
+El servidor necesita un hosting con **Node.js y WebSockets persistentes**
+(Render, Railway, Fly.io, un VPS…). No sirve un hosting «serverless» puro
+(Vercel/Netlify functions) porque las salas viven en memoria con Socket.IO.
+
+### Render (gratis, ~5 minutos)
+
+1. Entra en <https://render.com> y crea una cuenta (vale con GitHub).
+2. **New +** → **Blueprint** → conecta este repositorio (`tofihusni/Hitser`).
+3. Render lee `render.yaml` y crea el servicio solo. Pulsa **Apply**.
+4. Al terminar tendrás una URL `https://hitser-XXXX.onrender.com` — compártela
+   y a jugar. (En el plan gratuito, el primer arranque tras un rato inactivo
+   tarda ~30 s.)
+5. Opcional: en **Environment** añade `SPOTIFY_CLIENT_ID` y
+   `SPOTIFY_CLIENT_SECRET` para activar la música vía Spotify.
+
+### Railway / Fly.io / VPS
+
+También incluye un `Dockerfile`, así que cualquier plataforma que ejecute
+contenedores funciona: `docker build -t hitser . && docker run -p 3000:3000 hitser`.
+
 ## Tests
 
 ```bash

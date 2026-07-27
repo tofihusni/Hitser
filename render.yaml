@@ -1,0 +1,18 @@
+# Despliegue en Render (https://render.com) — plan gratuito.
+# Desde el dashboard: New + → Blueprint → conecta este repositorio.
+services:
+  - type: web
+    name: hitser
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Opcional: activa Spotify creando estos dos secretos en el dashboard.
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
