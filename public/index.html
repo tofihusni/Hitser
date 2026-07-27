@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d0d17" />
+  <title>Hitser · El juego musical</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Inicio ─────────────────────────────────────────── -->
+  <section id="screen-home" class="screen active">
+    <div class="hero">
+      <div class="logo">🎵</div>
+      <h1>HITSER</h1>
+      <p class="tagline">¿Sabes cuándo salió cada canción?<br>Escucha, coloca y gana.</p>
+    </div>
+    <div class="panel">
+      <label for="inp-name">Tu nombre</label>
+      <input id="inp-name" maxlength="16" placeholder="Ej: DJ Ana" autocomplete="nickname" />
+      <button id="btn-create" class="btn primary">🎧 Crear sala</button>
+      <div class="divider"><span>o únete a una</span></div>
+      <input id="inp-code" maxlength="4" placeholder="CÓDIGO" class="code-input" autocomplete="off" />
+      <button id="btn-join" class="btn secondary">🚪 Unirse a sala</button>
+    </div>
+    <p class="hint">Cada jugador entra desde su propio teléfono 📱</p>
+  </section>
+
+  <!-- ── Sala de espera ─────────────────────────────────── -->
+  <section id="screen-lobby" class="screen">
+    <header class="topbar">
+      <span class="badge">SALA</span>
+      <span id="lobby-code" class="room-code">····</span>
+    </header>
+    <p class="hint">Comparte el código para que se unan desde sus teléfonos</p>
+    <ul id="lobby-players" class="player-list"></ul>
+    <div id="lobby-settings" class="panel hidden">
+      <label>Cartas para ganar: <b id="lbl-target">10</b></label>
+      <input id="inp-target" type="range" min="3" max="15" value="10" />
+      <label class="check">
+        <input id="inp-steal" type="checkbox" checked />
+        Permitir robos (apostar 1 ficha a que otro falla)
+      </label>
+      <button id="btn-start" class="btn primary">▶ Empezar partida</button>
+    </div>
+    <p id="lobby-wait" class="hint hidden">Esperando a que el anfitrión empiece…</p>
+    <button id="btn-leave" class="btn ghost">Salir</button>
+  </section>
+
+  <!-- ── Juego ──────────────────────────────────────────── -->
+  <section id="screen-game" class="screen">
+    <header class="topbar">
+      <span id="game-code" class="room-code small">····</span>
+      <span id="game-round" class="badge">Ronda 1</span>
+      <div id="timerbar"><div id="timerfill"></div></div>
+    </header>
+
+    <div id="players-strip"></div>
+
+    <div id="turn-banner" class="turn-banner"></div>
+
+    <!-- Reproductor -->
+    <div id="audio-box" class="audio-box hidden">
+      <div id="vinyl" class="vinyl"><div class="vinyl-label">🎵</div></div>
+      <button id="btn-play" class="btn play">▶ Escuchar canción</button>
+      <p id="no-audio" class="hint hidden"></p>
+    </div>
+
+    <!-- Colocación (jugador activo) -->
+    <div id="place-box" class="hidden">
+      <p class="instruct">¿Dónde encaja esta canción en <b>tu línea de tiempo</b>?</p>
+      <div id="my-timeline" class="timeline"></div>
+      <details id="guess-box" class="guess">
+        <summary>🎤 Bonus: ¿sabes cuál es? (+1 ficha)</summary>
+        <input id="inp-guess-artist" placeholder="Artista" />
+        <input id="inp-guess-title" placeholder="Título" />
+        <button id="btn-guess" class="btn secondary small-btn">Enviar respuesta</button>
+        <p id="guess-sent" class="hint hidden">✅ Respuesta enviada</p>
+      </details>
+      <div class="token-actions">
+        <button id="btn-skip" class="btn ghost">🔁 Cambiar canción (1 🪙)</button>
+        <button id="btn-buy" class="btn ghost">💰 Comprarla (3 🪙)</button>
+      </div>
+    </div>
+
+    <!-- Espectador / robo -->
+    <div id="watch-box" class="hidden">
+      <p id="watch-msg" class="instruct"></p>
+      <div id="watch-timeline" class="timeline readonly"></div>
+      <div id="steal-offer" class="hidden">
+        <button id="btn-steal" class="btn danger">🏴‍☠️ ¡Robar! (1 🪙)</button>
+        <p class="hint">Si falló y tú aciertas dónde va en TU línea, te la llevas</p>
+      </div>
+      <div id="steal-pick" class="hidden">
+        <p class="instruct">Elige dónde va en <b>tu línea de tiempo</b>:</p>
+        <div id="steal-timeline" class="timeline"></div>
+      </div>
+    </div>
+
+    <!-- Ventana de robo (jugador activo esperando) -->
+    <div id="stealwait-box" class="hidden">
+      <p class="instruct">⏳ Los demás pueden intentar robarte la carta…</p>
+      <button id="btn-resolve" class="btn secondary">Revelar ya</button>
+    </div>
+
+    <!-- Revelación -->
+    <div id="reveal-box" class="hidden">
+      <div id="reveal-card" class="reveal-card">
+        <img id="reveal-art" class="artwork hidden" alt="" />
+        <div id="reveal-year" class="reveal-year"></div>
+        <div id="reveal-title" class="reveal-title"></div>
+        <div id="reveal-artist" class="reveal-artist"></div>
+      </div>
+      <p id="reveal-outcome" class="outcome"></p>
+      <p id="reveal-extra" class="hint"></p>
+      <button id="btn-next" class="btn primary hidden">➡ Siguiente turno</button>
+    </div>
+  </section>
+
+  <!-- ── Fin de partida ─────────────────────────────────── -->
+  <section id="screen-over" class="screen">
+    <div class="hero">
+      <div class="logo">🏆</div>
+      <h1 id="winner-name"></h1>
+      <p class="tagline">¡ha completado su línea de tiempo!</p>
+    </div>
+    <ul id="ranking" class="player-list"></ul>
+    <button id="btn-again" class="btn primary hidden">🔄 Jugar otra vez</button>
+    <button id="btn-home" class="btn ghost">Volver al inicio</button>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>

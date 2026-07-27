@@ -1,0 +1,21 @@
+{
+  "name": "hitser",
+  "version": "1.0.0",
+  "description": "Hitser: juego musical multijugador tipo Hitster para jugar desde el móvil",
+  "main": "server.js",
+  "scripts": {
+    "test": "node --test test/",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:41729/git/tofihusni/Hitser"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}
