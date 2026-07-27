@@ -60,13 +60,99 @@ audio.addEventListener('ended', () => {
   $('btn-play').textContent = '🔁 Volver a escuchar';
 });
 
-$('btn-play').addEventListener('click', () => {
+// ── Spotify (embed oficial controlado desde nuestro botón) ─────────────────
+// El iframe queda oculto durante el turno para no revelar la canción; con
+// sesión de Spotify iniciada en el navegador suena la canción completa.
+let spotifyCtrl = null;
+let spotifyApiPromise = null;
+let spotifyLoadedUri = null;
+let spotifyPaused = true;
+
+function loadSpotifyApi() {
+  if (spotifyApiPromise) return spotifyApiPromise;
+  spotifyApiPromise = new Promise((resolve, reject) => {
+    window.onSpotifyIframeApiReady = (api) => resolve(api);
+    const s = document.createElement('script');
+    s.src = 'https://open.spotify.com/embed/iframe-api/v1';
+    s.async = true;
+    s.onerror = () => reject(new Error('No se pudo cargar Spotify'));
+    document.head.appendChild(s);
+    setTimeout(() => reject(new Error('Spotify tardó demasiado')), 10000);
+  });
+  return spotifyApiPromise;
+}
+
+function ensureSpotifyTrack(trackId) {
+  const uri = 'spotify:track:' + trackId;
+  if (spotifyCtrl) {
+    if (spotifyLoadedUri !== uri) {
+      spotifyCtrl.loadUri(uri);
+      spotifyLoadedUri = uri;
+      spotifyPaused = true;
+    }
+    return Promise.resolve(spotifyCtrl);
+  }
+  return loadSpotifyApi().then(
+    (api) =>
+      new Promise((resolve) => {
+        api.createController(
+          $('spotify-embed'),
+          { uri, width: '100%', height: 152 },
+          (ctrl) => {
+            spotifyCtrl = ctrl;
+            spotifyLoadedUri = uri;
+            ctrl.addListener('playback_update', (e) => {
+              spotifyPaused = !e || !e.data || e.data.isPaused !== false;
+              $('vinyl').classList.toggle('spinning', !spotifyPaused);
+              $('btn-play').textContent = spotifyPaused ? '▶ Escuchar canción' : '⏸ Pausar';
+            });
+            resolve(ctrl);
+          }
+        );
+      })
+  );
+}
+
+$('btn-play').addEventListener('click', async () => {
+  const spId = S && S.audio && S.audio.spotifyTrackId;
+  if (spId) {
+    try {
+      const ctrl = await ensureSpotifyTrack(spId);
+      ctrl.togglePlay();
+      return;
+    } catch (err) {
+      // Si el embed no carga (p. ej. sin acceso a Spotify), cae al preview.
+      if (!(S.audio && S.audio.previewUrl)) return toast(err.message);
+      if (!audio.src) audio.src = S.audio.previewUrl;
+    }
+  }
   if (audio.paused) audio.play().catch(() => toast('No se pudo reproducir'));
   else audio.pause();
 });
 
 function syncAudio() {
-  const url = S && S.audio ? S.audio.previewUrl : null;
+  const a = S ? S.audio : null;
+  const spId = a ? a.spotifyTrackId : null;
+  const revealPhase = S && (S.phase === 'reveal' || S.phase === 'gameover');
+  // El embed solo se enseña en la revelación (con la carátula y el título).
+  $('spotify-wrap').classList.toggle('hidden', !spId || !spotifyCtrl);
+  $('spotify-wrap').classList.toggle('hidden-embed', !revealPhase);
+  if (spId) {
+    // Cambia de track si toca y silencia el reproductor de previews.
+    if (spotifyCtrl && spotifyLoadedUri !== 'spotify:track:' + spId) {
+      spotifyCtrl.loadUri('spotify:track:' + spId);
+      spotifyLoadedUri = 'spotify:track:' + spId;
+      spotifyPaused = true;
+      $('vinyl').classList.remove('spinning');
+      $('btn-play').textContent = '▶ Escuchar canción';
+    }
+    if (!audio.paused) audio.pause();
+    currentPreview = null;
+    audio.removeAttribute('src');
+    return;
+  }
+  if (spotifyCtrl && !spotifyPaused) spotifyCtrl.pause();
+  const url = a ? a.previewUrl : null;
   if (url !== currentPreview) {
     currentPreview = url;
     audio.pause();

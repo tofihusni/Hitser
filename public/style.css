@@ -192,6 +192,13 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .outcome.good { color: var(--accent); }
 .outcome.bad { color: var(--danger); }
 
+/* ── Embed de Spotify ── */
+.spotify-wrap { width: 100%; border-radius: 14px; overflow: hidden; }
+.spotify-wrap.hidden-embed {
+  /* Mantiene el iframe vivo pero invisible e inaccesible durante el turno */
+  height: 0 !important; opacity: 0; pointer-events: none;
+}
+
 /* ── Modo pantalla (TV) ── */
 body.screen-mode .screen { max-width: 1100px; }
 body.screen-mode .room-code { font-size: 56px; }

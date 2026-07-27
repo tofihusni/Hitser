@@ -45,12 +45,34 @@ desde cada móvil. Para jugar por internet, despliega en cualquier servicio Node
 
 ## Audio
 
-Las canciones suenan con **previews de 30 s de la API pública de iTunes** (sin
-claves ni cuentas). Los resultados se cachean en memoria y se precargan al
-arrancar. Si una canción no tiene preview disponible (o no hay salida a
-internet), el juego pasa automáticamente a **modo pista**: muestra el título y
-el artista, y solo hay que acertar el año (en ese modo no hay bonus de
-adivinanza).
+Hay tres niveles, y el juego elige automáticamente el mejor disponible:
+
+1. **Spotify** (opcional, recomendado) — canciones vía el **embed oficial de
+   Spotify**, oculto durante el turno para no desvelar la canción y controlado
+   por el botón de play del juego. Si el navegador que reproduce (la TV o un
+   móvil) tiene la sesión de Spotify iniciada, suena la **canción completa**;
+   si no, un preview de 30 s. Los jugadores no necesitan iniciar sesión ni
+   tener Premium. En la revelación el reproductor se muestra con su carátula.
+2. **iTunes** (por defecto, sin configurar nada) — previews de 30 s de la API
+   pública de iTunes, con caché y precarga al arrancar.
+3. **Modo pista** (respaldo automático) — si no hay audio disponible, se
+   muestra el título y el artista y solo hay que acertar el año (sin bonus de
+   adivinanza, porque la respuesta está a la vista).
+
+### Activar Spotify
+
+1. Entra en <https://developer.spotify.com/dashboard> (cuenta gratuita) y crea
+   una app; copia su **Client ID** y **Client Secret**.
+2. Arranca el servidor con esas credenciales:
+
+```bash
+SPOTIFY_CLIENT_ID=tu_client_id SPOTIFY_CLIENT_SECRET=tu_client_secret npm start
+```
+
+El servidor solo usa las credenciales para buscar el ID de cada canción
+(flujo *client credentials*, sin datos de usuarios); la reproducción ocurre en
+el navegador con el embed oficial. Si Spotify no responde, se cae a iTunes o
+al modo pista sin cortar la partida.
 
 ## Tecnología
 

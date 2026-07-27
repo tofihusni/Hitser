@@ -4,7 +4,7 @@
   "description": "Hitser: juego musical multijugador tipo Hitster para jugar desde el móvil",
   "main": "server.js",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "start": "node server.js"
   },
   "repository": {

@@ -7,7 +7,10 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const { Game } = require('./lib/game');
+const { Spotify } = require('./lib/spotify');
 const SONGS = require('./data/songs');
+
+const spotify = new Spotify();
 
 const app = express();
 const server = http.createServer(app);
@@ -154,14 +157,29 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
+// Reúne las fuentes de audio de una canción: track de Spotify (si está
+// configurado) y preview de iTunes como respaldo, en paralelo.
+async function fetchAudio(songIndex) {
+  const [preview, sp] = await Promise.all([
+    fetchPreview(songIndex),
+    spotify.isConfigured() ? spotify.findTrack(SONGS[songIndex]) : null,
+  ]);
+  if (!preview && !sp) return null;
+  return {
+    previewUrl: preview ? preview.previewUrl : null,
+    spotifyTrackId: sp ? sp.trackId : null,
+    artworkUrl: (sp && sp.artworkUrl) || (preview && preview.artworkUrl) || null,
+  };
+}
+
 async function startTurn(room) {
   room.audio = null;
   const card = room.game.currentCard;
   if (card) {
-    room.audio = await fetchPreview(card.songIndex);
-    // Si la partida avanzó mientras buscábamos el preview, no pisar nada.
+    room.audio = await fetchAudio(card.songIndex);
+    // Si la partida avanzó mientras buscábamos el audio, no pisar nada.
     if (room.game.currentCard !== card) return;
-    // Sin preview: modo pista — se enseña título/artista y se juega solo el año.
+    // Sin audio: modo pista — se enseña título/artista y se juega solo el año.
     room.game.clueShown = !room.audio;
   }
   armPlaceTimer(room);
@@ -417,5 +435,10 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`🎵 Hitser escuchando en http://localhost:${PORT}`);
+  console.log(
+    spotify.isConfigured()
+      ? '🟢 Spotify activado: canciones vía embed oficial (completas con sesión iniciada)'
+      : '⚪ Spotify no configurado (define SPOTIFY_CLIENT_ID y SPOTIFY_CLIENT_SECRET); se usan previews de iTunes'
+  );
   warmupPreviews().catch(() => {});
 });
