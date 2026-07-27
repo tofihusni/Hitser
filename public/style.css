@@ -559,6 +559,25 @@ body.screen-mode .react-bar { display: none; }
 .tvline-name { font-weight: 800; font-size: 15px; color: var(--muted); margin-top: 8px; padding-left: 4px; }
 .tvline-name.active { color: var(--accent); }
 
+/* ── Ayuda ── */
+.help-overlay {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(6,6,12,.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: overlayIn .3s ease;
+}
+.help-card {
+  max-width: 420px; width: 100%; max-height: 86dvh; overflow-y: auto;
+  background: linear-gradient(165deg, rgba(255,255,255,.1), rgba(255,255,255,.03));
+  border: 1px solid rgba(255,255,255,.15); border-radius: 22px; padding: 24px;
+  display: flex; flex-direction: column; gap: 16px;
+  animation: pop .35s cubic-bezier(.2,1.4,.4,1);
+}
+.help-card h2 { font-family: 'Montserrat', sans-serif; font-style: italic; text-transform: uppercase; font-size: 22px; }
+.help-steps { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.help-steps li { line-height: 1.5; color: var(--muted); font-size: 14.5px; }
+.help-steps b { color: var(--text); font-size: 15.5px; }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);

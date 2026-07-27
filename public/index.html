@@ -7,7 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Hitser · El juego musical</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
+  <link rel="icon" href="/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,700;0,900;1,700;1,900&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -48,6 +50,7 @@
         <input id="inp-code" maxlength="4" placeholder="CÓDIGO" class="code-input" autocomplete="off" />
         <button id="btn-join" class="btn secondary">🚪 Unirse a sala</button>
         <button id="btn-screen" class="btn ghost">📺 Modo pantalla (TV)</button>
+        <button id="btn-help" class="btn ghost">❓ ¿Cómo se juega?</button>
         <p class="hint">Cada jugador entra desde su propio teléfono 📱</p>
       </div>
     </div>
@@ -66,6 +69,7 @@
       <img id="qr-img" alt="QR para unirse" />
       <p class="hint">Escanea para unirte</p>
     </div>
+    <button id="btn-share" class="btn secondary">📤 Compartir invitación</button>
     <div class="crew-head">
       <h2>🎤 La banda</h2>
       <span id="crew-count" class="crew-count">0 / 10</span>
@@ -221,6 +225,20 @@
     <div class="turn-overlay-inner">
       <div id="overlay-avatar" class="overlay-avatar">🎧</div>
       <div id="overlay-text"></div>
+    </div>
+  </div>
+
+  <!-- Ayuda: cómo se juega -->
+  <div id="help-overlay" class="help-overlay hidden" role="dialog" aria-label="Cómo se juega">
+    <div class="help-card">
+      <h2>🎵 ¿Cómo se juega?</h2>
+      <ol class="help-steps">
+        <li><b>1. Escucha la canción</b><br />Cada ronda suena un éxito musical (arranca solo).</li>
+        <li><b>2. Colócala en tu línea de tiempo</b><br />¿Salió antes, entre o después de tus cartas? Toca el hueco correcto. ¡Todos juegan a la vez!</li>
+        <li><b>3. Gana cartas y fichas 🪙</b><br />Acierta y la carta es tuya. El más rápido gana ficha extra, 3 aciertos seguidos también, y adivinar artista y título suma otra.</li>
+        <li><b>4. Primero en llenar su línea gana 🏆</b><br />Las fichas sirven para comprar una colocación segura (3 🪙).</li>
+      </ol>
+      <button id="btn-help-close" class="btn primary big">¡Entendido, a jugar!</button>
     </div>
   </div>
 

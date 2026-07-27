@@ -387,6 +387,35 @@ test('simul: quien no coloca no aparece en resultados ni puntúa', () => {
   assert.strictEqual(p2.stats.wrong, 0);
 });
 
+test('simul: la racha de 3 aciertos seguidos da ficha extra y se corta al fallar', () => {
+  const g = newSimul({ targetCards: 15 });
+  g.start();
+  const p1 = g.players[0];
+  const before = p1.tokens;
+  for (let i = 1; i <= 3; i++) {
+    g.placeSimul(p1.id, correctGaps(p1.timeline, g.currentCard.year)[0]);
+    g.revealSimul();
+    const r = g.lastResult.results.find((x) => x.playerId === p1.id);
+    assert.strictEqual(r.streak, i);
+    assert.strictEqual(r.streakBonus, i === 3);
+    if (g.phase === 'gameover') return;
+    g.nextTurn();
+  }
+  assert.strictEqual(p1.stats.streak, 3);
+  // +3 por ser el más rápido en cada ronda (único que coloca) y +1 por la racha.
+  assert.strictEqual(p1.tokens, before + 4);
+  // Un fallo corta la racha.
+  let bad = -1;
+  for (let i = 0; i <= p1.timeline.length; i++) {
+    if (!isCorrectGap(p1.timeline, i, g.currentCard.year)) { bad = i; break; }
+  }
+  if (bad === -1) return;
+  g.placeSimul(p1.id, bad);
+  g.revealSimul();
+  assert.strictEqual(p1.stats.streak, 0);
+  assert.strictEqual(p1.stats.bestStreak, 3);
+});
+
 test('las canciones reales tienen datos válidos', () => {
   const songs = require('../data/songs');
   assert.ok(songs.length >= 100);

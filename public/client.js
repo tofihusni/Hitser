@@ -12,6 +12,7 @@ let timerInterval = null;
 let serverOffset = 0; // desfase entre el reloj del servidor y el del cliente
 let lastTurnKey = null; // detecta el cambio de turno para limpiar formularios
 let lastPhase = null; // detecta transiciones para sonidos y confeti
+let helpAutoShown = false; // las reglas se auto-muestran solo una vez por sesión
 
 // ── Avatares ────────────────────────────────────────────────────────────────
 const AVATARS = ['🎧', '🎸', '🎤', '🥁', '🎹', '🎺', '🪩', '🎷', '🌟', '🔥'];
@@ -54,6 +55,7 @@ const SFX = {
   steal: () => beep([[330, 0.12, 0], [330, 0.12, 0.15], [440, 0.28, 0.3]]),
   turn: () => beep([[440, 0.1, 0], [554, 0.16, 0.1]]),
   win: () => beep([[523, 0.15, 0], [659, 0.15, 0.13], [784, 0.15, 0.26], [1047, 0.5, 0.39]]),
+  tick: () => beep([[988, 0.05, 0]]),
 };
 function vibrate(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* nada */ }
@@ -351,6 +353,7 @@ function syncAudio() {
 }
 
 // ── Temporizador visual ─────────────────────────────────────────────────────
+let lastTickSec = null;
 function syncTimer() {
   clearInterval(timerInterval);
   const fill = $('timerfill');
@@ -376,7 +379,14 @@ function syncTimer() {
     const sLeft = Math.ceil(left / 1000);
     const showNum = left > 0 && sLeft <= 10 && (S.phase === 'placing' || S.phase === 'steal');
     num.classList.toggle('hidden', !showNum);
-    if (showNum) num.textContent = sLeft;
+    if (showNum) {
+      num.textContent = sLeft;
+      // Tic de tensión en los últimos 5 segundos (una vez por segundo).
+      if (sLeft <= 5 && sLeft !== lastTickSec) {
+        lastTickSec = sLeft;
+        SFX.tick();
+      }
+    }
     if (left <= 0) {
       num.classList.add('hidden');
       clearInterval(timerInterval);
@@ -497,6 +507,11 @@ function renderLobby() {
     ul.appendChild(li);
   }
   $('crew-empty').classList.toggle('hidden', S.players.length >= 10);
+  // La primera vez que entras a una sala, se enseñan las reglas.
+  if (!helpAutoShown && !isScreen && !localStorage.getItem('hitser_help_seen')) {
+    helpAutoShown = true;
+    showHelp();
+  }
   const isHost = S.you === S.hostId;
   $('lobby-settings').classList.toggle('hidden', !isHost || isScreen);
   $('lobby-wait').classList.toggle('hidden', isHost && !isScreen);
@@ -524,8 +539,9 @@ function renderGame() {
         ? ' ✔'
         : '';
     const pct = Math.min(100, Math.round((p.cards / S.settings.targetCards) * 100));
+    const streak = p.stats && p.stats.streak >= 2 ? ` · 🔥${p.stats.streak}` : '';
     d.innerHTML = `<div class="pname"></div>
-      <div class="pstats">🎴 ${p.cards}/${S.settings.targetCards} · 🪙 ${p.tokens}</div>
+      <div class="pstats">🎴 ${p.cards}/${S.settings.targetCards} · 🪙 ${p.tokens}${streak}</div>
       <div class="pbar"><div class="pbar-fill" style="width:${pct}%"></div></div>`;
     d.querySelector('.pname').textContent =
       `${p.avatar || '🎧'} ${p.name}` + (p.id === S.you ? ' (tú)' : '') + placedMark;
@@ -733,6 +749,8 @@ function renderReveal() {
     if (fast) extra.push(`⚡ Más rápido: ${playerName(fast.playerId)} +1🪙`);
     const gw = r.results.filter((x) => x.guessTokenWon);
     if (gw.length) extra.push('🎤 Bonus artista+título: ' + names(gw));
+    const sb = r.results.filter((x) => x.streakBonus);
+    for (const x of sb) extra.push(`🔥 ¡Racha de ${x.streak} de ${playerName(x.playerId)}! +1🪙`);
     $('reveal-extra').textContent = extra.join('  ·  ');
     const canAdvance = S.you === S.hostId;
     $('btn-next').classList.toggle('hidden', !canAdvance);
@@ -758,6 +776,7 @@ function renderReveal() {
   }
 
   const extra = [];
+  if (r.streakBonus) extra.push(`🔥 ¡Racha de ${r.streak}! +1 🪙`);
   if (r.guessResult) {
     if (r.guessResult.tokenWon) extra.push('🎤 ¡Artista y título correctos! +1 🪙');
     else if (r.guessResult.artistOk) extra.push('🎤 Artista correcto, pero el título no');
@@ -1066,6 +1085,42 @@ $('btn-steal').addEventListener('click', () => {
 $('inp-code').addEventListener('input', (e) => {
   e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
 });
+
+// ── Ayuda («cómo se juega») ─────────────────────────────────────────────────
+function showHelp() {
+  $('help-overlay').classList.remove('hidden');
+}
+$('btn-help').addEventListener('click', showHelp);
+$('btn-help-close').addEventListener('click', () => {
+  $('help-overlay').classList.add('hidden');
+  localStorage.setItem('hitser_help_seen', '1');
+});
+$('help-overlay').addEventListener('click', (e) => {
+  if (e.target === $('help-overlay')) $('btn-help-close').click();
+});
+
+// ── Compartir invitación (hoja nativa del móvil, con respaldo de copiado) ───
+$('btn-share').addEventListener('click', async () => {
+  if (!S || !S.code) return;
+  const url = `${location.origin}/?sala=${S.code}`;
+  const data = {
+    title: 'Hitser 🎵',
+    text: `¡Únete a mi partida de Hitser! Código: ${S.code}`,
+    url,
+  };
+  try {
+    if (navigator.share) await navigator.share(data);
+    else {
+      await navigator.clipboard.writeText(`${data.text} → ${url}`);
+      toast('✅ Invitación copiada, pégala donde quieras');
+    }
+  } catch { /* usuario canceló */ }
+});
+
+// ── App instalable ──────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
 
 // Si llegas con un enlace/QR tipo ?sala=ABCD, el código viene puesto.
 const salaParam = new URLSearchParams(location.search).get('sala');
