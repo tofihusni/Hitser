@@ -459,7 +459,11 @@ function render() {
 
 function renderLobby() {
   showScreen('screen-lobby');
-  $('lobby-code').textContent = S.code;
+  // Código como fichas de letras (solo A-Z generadas por el servidor).
+  $('lobby-code').innerHTML = S.code
+    .split('')
+    .map((c) => `<span class="code-letter">${c}</span>`)
+    .join('');
   // QR para unirse desde otros teléfonos (si el servicio de QR no carga, se oculta).
   const qr = $('qr-img');
   const joinUrl = `${location.origin}/?sala=${S.code}`;
@@ -1000,6 +1004,17 @@ $('btn-start').addEventListener('click', () => {
     era: segVal('seg-era'),
     lang: $('inp-lang').checked ? 'es' : 'all',
   });
+});
+
+// Tocar el código lo copia al portapapeles.
+$('lobby-code').addEventListener('click', async () => {
+  if (!S || !S.code) return;
+  try {
+    await navigator.clipboard.writeText(S.code);
+    toast('✅ Código copiado: ' + S.code);
+  } catch {
+    toast(S.code);
+  }
 });
 
 $('btn-leave').addEventListener('click', () => {

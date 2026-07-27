@@ -239,6 +239,21 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .room-code { font-family: 'Unbounded', sans-serif; font-size: 40px; font-weight: 900; letter-spacing: 9px; color: var(--gold); text-shadow: 0 0 26px rgba(255,201,60,.45); }
 .room-code.small { font-size: 16px; letter-spacing: 4px; text-shadow: none; }
 
+/* Código de sala como fichas de letras (se puede tocar para copiar) */
+#lobby-code { display: flex; gap: 10px; justify-content: center; cursor: pointer; margin-top: 8px; letter-spacing: 0; }
+.code-letter {
+  display: flex; align-items: center; justify-content: center;
+  width: 58px; height: 68px; border-radius: 14px;
+  background: linear-gradient(165deg, rgba(255,201,60,.16), rgba(255,201,60,.04));
+  border: 1.5px solid rgba(255,201,60,.45);
+  font-size: 34px; text-shadow: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.15);
+  animation: pop .35s ease backwards;
+}
+.code-letter:nth-child(2) { animation-delay: .06s; }
+.code-letter:nth-child(3) { animation-delay: .12s; }
+.code-letter:nth-child(4) { animation-delay: .18s; }
+
 #timerbar { flex: 1; height: 7px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; }
 #timerfill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width 1s linear; border-radius: 4px; }
 .timer-num {
@@ -255,15 +270,29 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 /* ── Jugadores ── */
 .player-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .player-list li {
-  background: var(--panel); border: 1px solid var(--panel-border);
-  border-radius: 13px; padding: 12px 16px;
-  display: flex; align-items: center; gap: 10px; font-weight: 700;
+  background: linear-gradient(165deg, rgba(255,255,255,.07), rgba(255,255,255,.02));
+  border: 1px solid var(--panel-border);
+  border-radius: 14px; padding: 11px 16px;
+  display: flex; align-items: center; gap: 12px; font-weight: 700;
   animation: fadeUp .25s ease;
 }
-.player-list .me { border-color: var(--accent); }
+.player-list .me { border-color: var(--accent); box-shadow: 0 0 18px rgba(30,215,96,.18); }
 .player-list .host-tag { color: var(--gold); font-size: 11.5px; font-weight: 800; }
 .player-list .right { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 13.5px; text-align: right; }
-.player-list .pavatar { font-size: 22px; }
+.player-list .pavatar {
+  font-size: 21px; width: 42px; height: 42px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(124,92,255,.3), rgba(255,45,120,.18));
+  border: 1px solid rgba(255,255,255,.14);
+}
+/* Podio del final: el primero destaca */
+#ranking li:first-child {
+  border-color: rgba(255,201,60,.55);
+  background: linear-gradient(165deg, rgba(255,201,60,.14), rgba(255,255,255,.02));
+  box-shadow: 0 0 26px rgba(255,201,60,.22);
+  padding: 15px 16px; font-size: 17px;
+}
 
 #players-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 #players-strip::-webkit-scrollbar { display: none; }
@@ -285,13 +314,26 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .turn-banner .you { color: var(--accent); }
 
 /* ── Reproductor ── */
-.audio-box { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 6px 0; }
+.audio-box {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 18px 16px;
+  background: linear-gradient(165deg, rgba(124,92,255,.10), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgba(0,0,0,.35);
+}
 .vinyl {
   width: 118px; height: 118px; border-radius: 50%; position: relative;
   background: repeating-radial-gradient(circle, #0d0d14 0 2.5px, #1a1a26 2.5px 5px);
   display: flex; align-items: center; justify-content: center;
   border: 3px solid #2d2d40;
   box-shadow: 0 10px 34px rgba(0,0,0,.55);
+}
+/* Reflejo del vinilo */
+.vinyl::after {
+  content: ''; position: absolute; inset: 6px; border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255,255,255,.14), transparent 45%);
+  pointer-events: none;
 }
 .vinyl-label {
   width: 46px; height: 46px; border-radius: 50%;
@@ -312,12 +354,16 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .tcard {
   flex: 0 0 auto; width: 98px; min-height: 128px;
   background: linear-gradient(165deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--dec, #7c5cff) 16%, transparent), rgba(255,255,255,.02));
   border: 1px solid var(--panel-border);
   border-top: 4px solid var(--dec, var(--violet));
   border-radius: 13px; padding: 9px 8px;
   display: flex; flex-direction: column; justify-content: space-between; gap: 4px;
   text-align: center;
+  box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
 }
+.tcard .tyear { font-family: 'Unbounded', sans-serif; }
 .tcard .tdecade { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: var(--dec, var(--muted)); }
 .tcard .tyear { font-size: 23px; font-weight: 900; color: var(--gold); }
 .tcard .ttitle { font-size: 11px; font-weight: 700; line-height: 1.25; overflow: hidden; }
@@ -328,7 +374,9 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
   border: 2px dashed rgba(30,215,96,.55); background: rgba(30,215,96,.07);
   color: var(--accent); cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  transition: background .15s, box-shadow .15s;
 }
+.gap-btn:hover { background: rgba(30,215,96,.16); box-shadow: 0 0 16px rgba(30,215,96,.25); }
 .gap-btn:active { background: rgba(30,215,96,.3); transform: scale(.96); }
 .gap-btn .gplus { font-size: 20px; font-weight: 900; line-height: 1; }
 .gap-btn .grange { font-size: 9.5px; font-weight: 700; color: #7fdfa2; line-height: 1.15; }
@@ -349,7 +397,10 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 }
 @keyframes flipIn { from { transform: rotateY(90deg) scale(.8); opacity: 0; } }
 @keyframes pop { from { transform: scale(.65); opacity: 0; } }
-.artwork { width: 116px; height: 116px; border-radius: 14px; margin-bottom: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.artwork {
+  width: 116px; height: 116px; border-radius: 14px; margin-bottom: 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5), 0 0 0 3px rgba(255,255,255,.12), 0 0 34px rgba(124,92,255,.35);
+}
 .reveal-year { font-family: 'Unbounded', sans-serif; font-size: 54px; font-weight: 900; color: var(--gold); text-shadow: 0 0 30px rgba(255,201,60,.4); line-height: 1.1; }
 .reveal-title { font-size: 19px; font-weight: 800; }
 .reveal-artist { color: var(--muted); font-weight: 600; }
