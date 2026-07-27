@@ -135,6 +135,10 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .btn.ghost { background: transparent; border: 1.5px solid rgba(255,255,255,.2); color: var(--muted); }
 .btn.danger { background: linear-gradient(135deg, var(--accent2), #b3134f); box-shadow: 0 8px 26px rgba(255,45,120,.35); }
 .btn.play { background: linear-gradient(135deg, var(--violet), #4a2fc0); width: 100%; box-shadow: 0 8px 26px rgba(124,92,255,.35); }
+.btn.play.pulse { animation: playPulse 1.4s ease infinite; }
+@keyframes playPulse {
+  50% { transform: scale(1.03); box-shadow: 0 8px 34px rgba(124,92,255,.65); }
+}
 .small-btn { font-size: 15px; padding: 10px 14px; }
 .icon-btn {
   background: rgba(255,255,255,.08); border: none; color: var(--text);
@@ -159,6 +163,12 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 
 #timerbar { flex: 1; height: 7px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; }
 #timerfill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width 1s linear; border-radius: 4px; }
+.timer-num {
+  font-weight: 900; font-size: 17px; color: var(--danger);
+  min-width: 26px; text-align: center;
+  animation: tickPulse 1s ease infinite;
+}
+@keyframes tickPulse { 50% { transform: scale(1.25); } }
 
 /* ── QR ── */
 .qr-box { display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -190,6 +200,8 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .pchip .pname { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
 .pchip .pstats { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .pchip.offline { opacity: .4; }
+.pchip .pbar { height: 4px; background: rgba(255,255,255,.1); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.pchip .pbar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--gold)); border-radius: 2px; transition: width .5s ease; }
 
 .turn-banner { text-align: center; font-size: 17px; font-weight: 800; min-height: 22px; }
 .turn-banner .you { color: var(--accent); }

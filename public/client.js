@@ -144,6 +144,9 @@ function playerName(id) {
 const audio = new Audio();
 audio.preload = 'auto';
 let currentPreview = null;
+let userInteracted = false; // los navegadores solo permiten autoplay tras un gesto
+let autoPlayed = null; // URL ya auto-reproducida (para no pelear con el pause del usuario)
+document.addEventListener('pointerdown', () => { userInteracted = true; });
 
 // ── Búsqueda de previews desde el navegador (JSONP: iTunes → Deezer) ────────
 // Cuando el servidor no consigue el preview (iTunes bloquea IPs de nube),
@@ -219,14 +222,17 @@ function effectiveAudio() {
 audio.addEventListener('play', () => {
   $('vinyl').classList.add('spinning');
   $('btn-play').textContent = '⏸ Pausar';
+  $('btn-play').classList.remove('pulse');
 });
 audio.addEventListener('pause', () => {
   $('vinyl').classList.remove('spinning');
   $('btn-play').textContent = '▶ Escuchar canción';
+  $('btn-play').classList.add('pulse');
 });
 audio.addEventListener('ended', () => {
   $('vinyl').classList.remove('spinning');
   $('btn-play').textContent = '🔁 Volver a escuchar';
+  $('btn-play').classList.add('pulse');
 });
 
 // ── Spotify (embed oficial controlado desde nuestro botón) ─────────────────
@@ -329,6 +335,18 @@ function syncAudio() {
     if (url) audio.src = url;
     else audio.removeAttribute('src');
     $('btn-play').textContent = '▶ Escuchar canción';
+    autoPlayed = null;
+  }
+  // La canción arranca sola al empezar la ronda (una vez por canción; si el
+  // usuario pausa, no se le vuelve a encender).
+  if (
+    url &&
+    userInteracted &&
+    autoPlayed !== url &&
+    (S.phase === 'placing' || S.phase === 'steal')
+  ) {
+    autoPlayed = url;
+    audio.play().catch(() => {});
   }
 }
 
@@ -338,6 +356,7 @@ function syncTimer() {
   const fill = $('timerfill');
   if (!S || !S.timerEndsAt) {
     fill.style.width = '0%';
+    $('timer-num').classList.add('hidden');
     return;
   }
   const secs =
@@ -347,12 +366,21 @@ function syncTimer() {
         ? S.settings.revealSeconds
         : S.settings.placeSeconds;
   const total = secs * 1000;
+  const num = $('timer-num');
   const tick = () => {
     // Se usa el reloj del servidor (con desfase corregido) para que la barra
     // sea fiel aunque el reloj del móvil vaya mal.
     const left = S.timerEndsAt - (Date.now() + serverOffset);
     fill.style.width = Math.max(0, Math.min(100, (left / total) * 100)) + '%';
-    if (left <= 0) clearInterval(timerInterval);
+    // Cuenta atrás numérica en los últimos 10 segundos de colocación/robo.
+    const sLeft = Math.ceil(left / 1000);
+    const showNum = left > 0 && sLeft <= 10 && (S.phase === 'placing' || S.phase === 'steal');
+    num.classList.toggle('hidden', !showNum);
+    if (showNum) num.textContent = sLeft;
+    if (left <= 0) {
+      num.classList.add('hidden');
+      clearInterval(timerInterval);
+    }
   };
   tick();
   timerInterval = setInterval(tick, 500);
@@ -481,8 +509,10 @@ function renderGame() {
       S.settings.mode === 'simul' && S.phase === 'placing' && S.placedIds.includes(p.id)
         ? ' ✔'
         : '';
+    const pct = Math.min(100, Math.round((p.cards / S.settings.targetCards) * 100));
     d.innerHTML = `<div class="pname"></div>
-      <div class="pstats">🎴 ${p.cards}/${S.settings.targetCards} · 🪙 ${p.tokens}</div>`;
+      <div class="pstats">🎴 ${p.cards}/${S.settings.targetCards} · 🪙 ${p.tokens}</div>
+      <div class="pbar"><div class="pbar-fill" style="width:${pct}%"></div></div>`;
     d.querySelector('.pname').textContent =
       `${p.avatar || '🎧'} ${p.name}` + (p.id === S.you ? ' (tú)' : '') + placedMark;
     strip.appendChild(d);
@@ -519,6 +549,8 @@ function renderGame() {
     $('audio-box').classList.remove('hidden');
     const noAudio = !av;
     $('btn-play').classList.toggle('hidden', noAudio);
+    const spMode = S.audio && S.audio.spotifyTrackId;
+    $('btn-play').classList.toggle('pulse', !noAudio && (spMode ? spotifyPaused : audio.paused));
     $('no-audio').classList.toggle('hidden', !noAudio);
     if (searching) {
       $('no-audio').textContent = '⏳ Buscando la canción…';
@@ -650,6 +682,14 @@ function renderReveal() {
   $('reveal-year').textContent = r.card.year;
   $('reveal-title').textContent = r.card.title;
   $('reveal-artist').textContent = r.card.artist;
+
+  // Tu línea de tiempo actualizada, con la carta nueva brillando si la ganaste.
+  const meP = me();
+  const showTl = !!(meP && meP.timeline.length);
+  $('reveal-timeline').classList.toggle('hidden', !showTl);
+  if (showTl) {
+    renderTimeline($('reveal-timeline'), meP, { highlight: r.card.songIndex });
+  }
 
   const out = $('reveal-outcome');
   out.classList.remove('good', 'bad');
