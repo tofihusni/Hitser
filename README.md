@@ -8,11 +8,19 @@ adivina **en qué año salió** y colócala en tu línea de tiempo. Cada jugador
 
 1. Un jugador **crea la sala** y comparte el código de 4 letras.
 2. Los demás entran desde su móvil en la misma dirección y **se unen con el código**.
-3. En tu turno suena una canción (preview de 30 segundos). Debes colocar la carta
-   en la posición cronológica correcta de **tu línea de tiempo**.
-   - ✅ Aciertas → te quedas la carta.
-   - ❌ Fallas → la carta se pierde… ¡o te la roban!
+3. Suena una canción y hay que colocarla en la posición cronológica correcta de
+   **tu línea de tiempo**: ✅ aciertas → te quedas la carta.
 4. **Gana** quien primero complete su línea de tiempo (10 cartas por defecto, configurable de 3 a 15).
+
+### Dos modos de juego
+
+- **🎉 Todos a la vez** (por defecto): cada ronda suena UNA canción y **todos los
+  jugadores la colocan a la vez** en su propia línea. Nadie espera turnos, la
+  revelación llega en cuanto el último coloca, y **el más rápido en acertar gana
+  +1 ficha**. Todos pueden intentar el bonus de artista+título cada ronda.
+- **🎙 Por turnos** (clásico, como el juego de mesa): en tu turno colocas tú;
+  los demás pueden **robarte la carta** (1 🪙) si creen que fallaste, y puedes
+  cambiar de canción (1 🪙) o comprarla (3 🪙).
 
 ### Fichas 🪙 (como en el juego original)
 

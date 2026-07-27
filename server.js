@@ -21,39 +21,73 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3000;
 
-// ─── Previews de audio (API pública de iTunes, sin claves) ──────────────────
-const previewCache = new Map(); // songIndex -> { previewUrl, artworkUrl } | null
+// ─── Previews de audio (iTunes con respaldo de Deezer, sin claves) ──────────
+// Ojo: iTunes suele devolver 403 a IPs de centros de datos (Render, AWS…).
+// Por eso hay doble respaldo: Deezer desde el servidor y, si ambos fallan,
+// los propios navegadores de los jugadores buscan el preview (ver lookupTerm).
+const previewCache = new Map(); // songIndex -> { previewUrl, artworkUrl }
+
+async function fetchJson(url, ms = 6000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+const norm = (x) => String(x || '').toLowerCase();
+
+async function searchItunes(s) {
+  const term = encodeURIComponent(`${s.artist} ${s.title}`);
+  const data = await fetchJson(
+    `https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=5`
+  );
+  const hit =
+    (data.results || []).find(
+      (r) => r.previewUrl && norm(r.artistName).includes(norm(s.artist).split(' ')[0])
+    ) || (data.results || []).find((r) => r.previewUrl);
+  return hit
+    ? {
+        previewUrl: hit.previewUrl,
+        artworkUrl: hit.artworkUrl100 ? hit.artworkUrl100.replace('100x100', '300x300') : null,
+      }
+    : null;
+}
+
+async function searchDeezer(s) {
+  const q = encodeURIComponent(`${s.artist} ${s.title}`);
+  const data = await fetchJson(`https://api.deezer.com/search?q=${q}&limit=5`);
+  const hit =
+    (data.data || []).find(
+      (r) => r.preview && norm(r.artist && r.artist.name).includes(norm(s.artist).split(' ')[0])
+    ) || (data.data || []).find((r) => r.preview);
+  return hit
+    ? { previewUrl: hit.preview, artworkUrl: (hit.album && hit.album.cover_medium) || null }
+    : null;
+}
 
 async function fetchPreview(songIndex) {
   if (previewCache.has(songIndex)) return previewCache.get(songIndex);
   const s = SONGS[songIndex];
-  const term = encodeURIComponent(`${s.artist} ${s.title}`);
-  const url = `https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=5`;
+  let out = null;
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(t);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const norm = (x) => String(x || '').toLowerCase();
-    // Prefiere resultados cuyo artista coincida con el buscado.
-    const hit =
-      (data.results || []).find(
-        (r) => r.previewUrl && norm(r.artistName).includes(norm(s.artist).split(' ')[0])
-      ) || (data.results || []).find((r) => r.previewUrl);
-    const out = hit
-      ? {
-          previewUrl: hit.previewUrl,
-          artworkUrl: hit.artworkUrl100 ? hit.artworkUrl100.replace('100x100', '300x300') : null,
-        }
-      : null;
-    previewCache.set(songIndex, out);
-    return out;
+    out = await searchItunes(s);
   } catch (err) {
-    console.warn(`Sin preview para "${s.title}" (${s.artist}): ${err.message}`);
-    return null; // no cacheamos el fallo: se reintenta la próxima vez
+    console.warn(`iTunes falló para "${s.title}": ${err.message}`);
   }
+  if (!out) {
+    try {
+      out = await searchDeezer(s);
+    } catch (err) {
+      console.warn(`Deezer falló para "${s.title}": ${err.message}`);
+    }
+  }
+  if (out) previewCache.set(songIndex, out); // los fallos no se cachean
+  return out;
 }
 
 // Precalienta la caché de previews en segundo plano para que los turnos
@@ -95,6 +129,15 @@ class Room {
     this.lastActivity = Date.now();
     this.kickTimers = new Map(); // playerId -> timeout de gracia en el lobby
     this.screens = new Set(); // sockets en modo pantalla (TV), sin jugador
+    this.lookupTerm = null; // término de búsqueda para que los navegadores resuelvan el audio
+    this.lookupTimer = null; // plazo para caer al modo pista si nadie encuentra audio
+  }
+
+  clearLookup() {
+    if (this.lookupTimer) clearTimeout(this.lookupTimer);
+    this.lookupTimer = null;
+    this.lookupTerm = null;
+    this.lookupFails = new Set();
   }
 
   cancelKick(playerId) {
@@ -130,6 +173,7 @@ class Room {
       timerEndsAt: this.timerEndsAt,
       audio: this.audio,
       audioLoading: !!this.audioLoading,
+      lookup: this.audio ? null : this.lookupTerm,
       now: Date.now(), // para corregir el desfase de reloj en los clientes
     };
     for (const [playerId, socket] of this.sockets) {
@@ -172,6 +216,7 @@ async function startTurn(room) {
   // una segunda emisión, para que nadie escuche la canción del turno anterior.
   room.audio = null;
   room.audioLoading = true;
+  room.clearLookup();
   armPlaceTimer(room);
   room.broadcast();
   const card = room.game.currentCard;
@@ -181,8 +226,27 @@ async function startTurn(room) {
   room.audioLoading = false;
   if (room.game.phase === 'placing' || room.game.phase === 'steal') {
     room.audio = audio;
-    // Sin audio: modo pista — se enseña título/artista y se juega solo el año.
-    room.game.clueShown = !audio;
+    if (audio) {
+      room.game.clueShown = false;
+    } else {
+      // El servidor no consiguió preview (p. ej. iTunes bloquea IPs de nube):
+      // se pide a los navegadores que lo busquen ellos. Si el jugador activo
+      // tampoco lo encuentra en 10 s, se cae al modo pista.
+      room.lookupTerm = `${card.artist} ${card.title}`;
+      room.game.clueShown = false;
+      room.lookupTimer = setTimeout(() => {
+        room.lookupTimer = null;
+        if (
+          room.game.currentCard === card &&
+          !room.audio &&
+          (room.game.phase === 'placing' || room.game.phase === 'steal')
+        ) {
+          room.game.clueShown = true;
+          room.lookupTerm = null;
+          room.broadcast();
+        }
+      }, 10 * 1000);
+    }
   }
   room.broadcast();
 }
@@ -203,13 +267,18 @@ function armPlaceTimer(room) {
   const secs = room.game.settings.placeSeconds;
   if (!secs) return;
   room.setTimer(secs, () => {
-    // Tiempo agotado: colocación automática en un hueco aleatorio.
     const g = room.game;
     if (g.phase !== 'placing') return;
     if (!anyoneConnected(room)) return; // sala vacía: la partida queda en pausa
-    const p = g.activePlayer;
-    const gap = Math.floor(Math.random() * (p.timeline.length + 1));
-    g.placeCard(p.id, gap);
+    if (g.settings.mode === 'simul') {
+      // Tiempo agotado: se revela con lo que haya; quien no colocó, no puntúa.
+      g.revealSimul();
+    } else {
+      // Clásico: colocación automática en un hueco aleatorio.
+      const p = g.activePlayer;
+      const gap = Math.floor(Math.random() * (p.timeline.length + 1));
+      g.placeCard(p.id, gap);
+    }
     armPhaseTimer(room);
     room.broadcast();
   });
@@ -366,6 +435,7 @@ io.on('connection', (socket) => {
       s.targetCards = +opts.targetCards;
     }
     if (typeof opts.allowSteal === 'boolean') s.allowSteal = opts.allowSteal;
+    if (['simul', 'classic'].includes(opts.mode)) s.mode = opts.mode;
     if ([30, 60, 90].includes(+opts.placeSeconds)) s.placeSeconds = +opts.placeSeconds;
     if ([0, 2].includes(+opts.yearMargin)) s.yearMargin = +opts.yearMargin;
     if (['all', 'classic', 'middle', 'modern'].includes(opts.era)) s.era = opts.era;
@@ -376,10 +446,29 @@ io.on('connection', (socket) => {
     startTurn(room);
   });
 
+  // En modo simultáneo, cuando todos han colocado se revela sin esperar.
+  function maybeRevealSimul(room) {
+    if (room.game.settings.mode !== 'simul') return;
+    if (room.game.phase === 'placing' && room.game.allPlaced()) {
+      room.clearTimer();
+      room.game.revealSimul();
+      armPhaseTimer(room);
+    }
+  }
+
   socket.on('placeCard', ({ gap } = {}) => {
     if (!joined) return;
     const { room, playerId } = joined;
-    const r = room.game.placeCard(playerId, gap);
+    const g = room.game;
+    if (g.settings.mode === 'simul') {
+      const r = g.placeSimul(playerId, gap);
+      if (r.error) return fail(r.error);
+      room.touch();
+      maybeRevealSimul(room);
+      room.broadcast();
+      return;
+    }
+    const r = g.placeCard(playerId, gap);
     if (r.error) return fail(r.error);
     room.touch();
     room.clearTimer();
@@ -390,7 +479,11 @@ io.on('connection', (socket) => {
   socket.on('guessSong', ({ artist, title } = {}) => {
     if (!joined) return;
     const { room, playerId } = joined;
-    const r = room.game.setGuess(playerId, artist, title);
+    const g = room.game;
+    const r =
+      g.settings.mode === 'simul'
+        ? g.guessSimul(playerId, artist, title)
+        : g.setGuess(playerId, artist, title);
     if (r.error) return fail(r.error);
     room.touch();
     room.broadcast();
@@ -399,6 +492,7 @@ io.on('connection', (socket) => {
   socket.on('skipSong', () => {
     if (!joined) return;
     const { room, playerId } = joined;
+    if (room.game.settings.mode === 'simul') return fail('En este modo no se cambia de canción');
     const r = room.game.skipSong(playerId);
     if (r.error) return fail(r.error);
     room.touch();
@@ -409,7 +503,16 @@ io.on('connection', (socket) => {
   socket.on('buyCard', () => {
     if (!joined) return;
     const { room, playerId } = joined;
-    const r = room.game.buyCard(playerId);
+    const g = room.game;
+    if (g.settings.mode === 'simul') {
+      const r = g.buySimul(playerId);
+      if (r.error) return fail(r.error);
+      room.touch();
+      maybeRevealSimul(room);
+      room.broadcast();
+      return;
+    }
+    const r = g.buyCard(playerId);
     if (r.error) return fail(r.error);
     room.touch();
     room.clearTimer();
@@ -489,10 +592,50 @@ io.on('connection', (socket) => {
       }
     }
     room.clearTimer();
+    room.clearLookup();
     room.audio = null;
     room.audioLoading = false;
     room.touch();
     room.broadcast();
+  });
+
+  // Los navegadores informan de si encontraron el preview por su cuenta.
+  socket.on('lookupResult', ({ found } = {}) => {
+    if (!joined) return;
+    const { room, playerId } = joined;
+    const g = room.game;
+    if (!room.lookupTerm) return;
+    if (g.phase !== 'placing' && g.phase !== 'steal') return;
+    const simul = g.settings.mode === 'simul';
+    if (!simul) {
+      // Clásico: manda el jugador activo, que es quien necesita oírla.
+      const active = g.activePlayer;
+      if (!active || active.id !== playerId) return;
+      if (found) {
+        if (room.lookupTimer) clearTimeout(room.lookupTimer);
+        room.lookupTimer = null;
+      } else {
+        g.clueShown = true;
+        room.clearLookup();
+        room.broadcast();
+      }
+      return;
+    }
+    // Simultáneo: un éxito cualquiera cancela el plazo; si TODOS los
+    // conectados fallan, se pasa al modo pista.
+    if (found) {
+      if (room.lookupTimer) clearTimeout(room.lookupTimer);
+      room.lookupTimer = null;
+      return;
+    }
+    room.lookupFails = room.lookupFails || new Set();
+    room.lookupFails.add(playerId);
+    const connected = g.players.filter((p) => p.connected);
+    if (connected.length && connected.every((p) => room.lookupFails.has(p.id))) {
+      g.clueShown = true;
+      room.clearLookup();
+      room.broadcast();
+    }
   });
 
   // Reacciones en vivo: un emoji que flota en las pantallas de todos.
@@ -528,6 +671,8 @@ io.on('connection', (socket) => {
       const next = room.game.players.find((q) => q.connected);
       if (next) room.hostId = next.id;
     }
+    // Simultáneo: si el que se fue era el único que faltaba por colocar, revela.
+    maybeRevealSimul(room);
     room.broadcast();
   });
 });

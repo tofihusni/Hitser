@@ -145,6 +145,77 @@ const audio = new Audio();
 audio.preload = 'auto';
 let currentPreview = null;
 
+// ── Búsqueda de previews desde el navegador (JSONP: iTunes → Deezer) ────────
+// Cuando el servidor no consigue el preview (iTunes bloquea IPs de nube),
+// cada teléfono lo busca por su cuenta desde su propia conexión.
+function jsonp(url, ms = 6000) {
+  return new Promise((resolve, reject) => {
+    const name = 'jp' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    const t = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, ms);
+    function cleanup() {
+      delete window[name];
+      s.remove();
+      clearTimeout(t);
+    }
+    window[name] = (data) => { cleanup(); resolve(data); };
+    s.src = url + '&callback=' + name;
+    s.onerror = () => { cleanup(); reject(new Error('error')); };
+    document.head.appendChild(s);
+  });
+}
+
+async function clientLookup(term) {
+  try {
+    const d = await jsonp(
+      'https://itunes.apple.com/search?media=music&entity=song&limit=5&term=' +
+        encodeURIComponent(term)
+    );
+    const hit = (d.results || []).find((r) => r.previewUrl);
+    if (hit) {
+      return {
+        previewUrl: hit.previewUrl,
+        artworkUrl: hit.artworkUrl100 ? hit.artworkUrl100.replace('100x100', '300x300') : null,
+      };
+    }
+  } catch { /* siguiente fuente */ }
+  try {
+    const d = await jsonp(
+      'https://api.deezer.com/search?limit=5&output=jsonp&q=' + encodeURIComponent(term)
+    );
+    const hit = (d.data || []).find((r) => r.preview);
+    if (hit) {
+      return { previewUrl: hit.preview, artworkUrl: (hit.album && hit.album.cover_medium) || null };
+    }
+  } catch { /* sin suerte */ }
+  return null;
+}
+
+let lookupState = { term: null, audio: null, pending: false };
+function syncLookup() {
+  const term = S && !S.audio && S.lookup ? S.lookup : null;
+  if (!term) {
+    if (lookupState.term && (!S || !S.lookup)) lookupState = { term: null, audio: null, pending: false };
+    return;
+  }
+  if (lookupState.term === term) return; // ya resuelto o en curso
+  lookupState = { term, audio: null, pending: true };
+  clientLookup(term).then((res) => {
+    if (lookupState.term !== term) return;
+    lookupState.audio = res;
+    lookupState.pending = false;
+    if (S && S.turnPlayerId === S.you && !isScreen) {
+      socket.emit('lookupResult', { found: !!res });
+    }
+    render();
+  });
+}
+
+// Audio efectivo: el que resolvió el servidor o el que encontró este navegador.
+function effectiveAudio() {
+  return (S && S.audio) || lookupState.audio || null;
+}
+
 audio.addEventListener('play', () => {
   $('vinyl').classList.add('spinning');
   $('btn-play').textContent = '⏸ Pausar';
@@ -250,7 +321,8 @@ function syncAudio() {
     return;
   }
   if (spotifyCtrl && !spotifyPaused) spotifyCtrl.pause();
-  const url = a ? a.previewUrl : null;
+  const eff = effectiveAudio();
+  const url = eff ? eff.previewUrl : null;
   if (url !== currentPreview) {
     currentPreview = url;
     audio.pause();
@@ -405,34 +477,50 @@ function renderGame() {
     if (p.id === S.turnPlayerId) d.classList.add('turn');
     if (p.id === S.you) d.classList.add('me-chip');
     if (!p.connected) d.classList.add('offline');
+    const placedMark =
+      S.settings.mode === 'simul' && S.phase === 'placing' && S.placedIds.includes(p.id)
+        ? ' ✔'
+        : '';
     d.innerHTML = `<div class="pname"></div>
       <div class="pstats">🎴 ${p.cards}/${S.settings.targetCards} · 🪙 ${p.tokens}</div>`;
     d.querySelector('.pname').textContent =
-      `${p.avatar || '🎧'} ${p.name}` + (p.id === S.you ? ' (tú)' : '');
+      `${p.avatar || '🎧'} ${p.name}` + (p.id === S.you ? ' (tú)' : '') + placedMark;
     strip.appendChild(d);
   }
 
   const my = me();
-  const isMyTurn = S.turnPlayerId === S.you;
+  const simul = S.settings.mode === 'simul';
+  const isMyTurn = !simul && S.turnPlayerId === S.you;
   const active = S.players.find((p) => p.id === S.turnPlayerId);
 
-  // Banner de turno
-  $('turn-banner').innerHTML = isMyTurn
-    ? '<span class="you">🎯 ¡Es tu turno!</span>'
-    : `Turno de <b></b>`;
-  if (!isMyTurn) $('turn-banner').querySelector('b').textContent = active ? active.name : '?';
+  // Banner de turno / ronda
+  if (simul) {
+    if (S.phase === 'placing') {
+      const total = S.players.filter((p) => p.connected).length;
+      $('turn-banner').innerHTML = `<span class="you">🎵 ¡Coloca la canción! (${S.placedIds.length}/${total})</span>`;
+    } else {
+      $('turn-banner').textContent = '';
+    }
+  } else {
+    $('turn-banner').innerHTML = isMyTurn
+      ? '<span class="you">🎯 ¡Es tu turno!</span>'
+      : `Turno de <b></b>`;
+    if (!isMyTurn) $('turn-banner').querySelector('b').textContent = active ? active.name : '?';
+  }
 
   // Cajas visibles según fase y rol
   const boxes = ['audio-box', 'place-box', 'watch-box', 'stealwait-box', 'reveal-box'];
   boxes.forEach((b) => $(b).classList.add('hidden'));
 
-  const clueMode = !S.audio && !S.audioLoading && S.currentCard && S.currentCard.hidden && S.currentCard.title;
+  const av = effectiveAudio();
+  const searching = (S.audioLoading || lookupState.pending) && !av;
+  const clueMode = !av && !searching && S.currentCard && S.currentCard.hidden && S.currentCard.title;
   if (S.phase === 'placing' || S.phase === 'steal') {
     $('audio-box').classList.remove('hidden');
-    const noAudio = !S.audio;
+    const noAudio = !av;
     $('btn-play').classList.toggle('hidden', noAudio);
     $('no-audio').classList.toggle('hidden', !noAudio);
-    if (S.audioLoading) {
+    if (searching) {
       $('no-audio').textContent = '⏳ Buscando la canción…';
     } else if (clueMode) {
       $('no-audio').innerHTML = '🔇 Sin audio — la canción es:<br>«<b></b>» de <b class="clue-artist"></b><br>¿En qué año salió?';
@@ -446,11 +534,16 @@ function renderGame() {
   // Vista TV: enseña las líneas de tiempo de todos los jugadores.
   if (isScreen && (S.phase === 'placing' || S.phase === 'steal')) {
     $('watch-box').classList.remove('hidden');
-    $('watch-msg').innerHTML =
-      S.phase === 'steal'
-        ? `<b></b> ya colocó su carta. ¡Momento de robar!`
-        : `<b></b> está colocando la canción en su línea de tiempo…`;
-    $('watch-msg').querySelector('b').textContent = active ? active.name : '?';
+    if (simul) {
+      const total = S.players.filter((p) => p.connected).length;
+      $('watch-msg').textContent = `🎵 Todos colocando la canción… (${S.placedIds.length}/${total})`;
+    } else {
+      $('watch-msg').innerHTML =
+        S.phase === 'steal'
+          ? `<b></b> ya colocó su carta. ¡Momento de robar!`
+          : `<b></b> está colocando la canción en su línea de tiempo…`;
+      $('watch-msg').querySelector('b').textContent = active ? active.name : '?';
+    }
     const cont = $('watch-timeline');
     cont.innerHTML = '';
     cont.classList.remove('timeline');
@@ -472,12 +565,37 @@ function renderGame() {
   }
   $('watch-timeline').classList.add('timeline');
 
+  // Modo simultáneo: todos colocan a la vez en su propia línea.
+  if (simul && S.phase === 'placing') {
+    const placed = !!S.myPlacement;
+    if (my && !placed) {
+      $('place-box').classList.remove('hidden');
+      renderTimeline($('my-timeline'), my, { gaps: true, onGap: (g) => socket.emit('placeCard', { gap: g }) });
+      $('guess-box').classList.toggle('hidden', !!clueMode); // sin audio no hay bonus
+      $('guess-sent').classList.toggle('hidden', !S.myGuessSubmitted);
+      $('btn-skip').classList.add('hidden'); // no hay cambio de canción en este modo
+      $('btn-buy').disabled = my.tokens < 3;
+    } else {
+      $('watch-box').classList.remove('hidden');
+      $('watch-msg').textContent = placed
+        ? '✅ Carta colocada — esperando a los demás…'
+        : 'Observando la ronda…';
+      renderTimeline($('watch-timeline'), my || S.players[0], {});
+      $('steal-offer').classList.add('hidden');
+      $('steal-pick').classList.add('hidden');
+    }
+    syncAudio();
+    syncTimer();
+    return;
+  }
+
   if (S.phase === 'placing') {
     if (isMyTurn) {
       $('place-box').classList.remove('hidden');
       renderTimeline($('my-timeline'), my, { gaps: true, onGap: (g) => socket.emit('placeCard', { gap: g }) });
       $('guess-box').classList.toggle('hidden', !!clueMode); // sin audio no hay bonus
       $('guess-sent').classList.toggle('hidden', !S.guessSubmitted);
+      $('btn-skip').classList.remove('hidden');
       $('btn-skip').disabled = my.tokens < 1;
       $('btn-buy').disabled = my.tokens < 3;
     } else {
@@ -520,11 +638,12 @@ function renderReveal() {
   if (!r) return;
   $('reveal-box').classList.remove('hidden');
   // Solo se muestra el reproductor si hay algo que escuchar.
-  $('audio-box').classList.toggle('hidden', !S.audio);
-  $('btn-play').classList.toggle('hidden', !S.audio);
+  const av2 = effectiveAudio();
+  $('audio-box').classList.toggle('hidden', !av2);
+  $('btn-play').classList.toggle('hidden', !av2);
   $('no-audio').classList.add('hidden');
 
-  const art = S.audio && S.audio.artworkUrl;
+  const art = av2 && av2.artworkUrl;
   $('reveal-art').classList.toggle('hidden', !art);
   if (art) $('reveal-art').src = art;
 
@@ -532,10 +651,42 @@ function renderReveal() {
   $('reveal-title').textContent = r.card.title;
   $('reveal-artist').textContent = r.card.artist;
 
-  const who = playerName(r.playerId);
-  const isMe = r.playerId === S.you;
   const out = $('reveal-outcome');
   out.classList.remove('good', 'bad');
+
+  // Resultado del modo simultáneo: cada uno ve el suyo + el resumen de todos.
+  if (r.type === 'simul') {
+    const names = (list) => list.map((x) => playerName(x.playerId)).join(', ');
+    const oks = r.results.filter((x) => x.correct);
+    const kos = r.results.filter((x) => !x.correct);
+    const mine = r.results.find((x) => x.playerId === S.you);
+    if (!mine) {
+      out.textContent = `✅ ${oks.length} acierto(s) · ❌ ${kos.length} fallo(s)`;
+    } else if (mine.bought) {
+      out.textContent = '💰 Compraste la carta con 3 fichas';
+      out.classList.add('good');
+    } else if (mine.correct) {
+      out.textContent = '✅ ¡Acertaste! Carta a tu línea de tiempo';
+      out.classList.add('good');
+    } else {
+      out.textContent = '❌ Fallaste esta ronda…';
+      out.classList.add('bad');
+    }
+    const extra = [];
+    if (oks.length) extra.push('✅ ' + names(oks));
+    if (kos.length) extra.push('❌ ' + names(kos));
+    const fast = r.results.find((x) => x.firstBonus);
+    if (fast) extra.push(`⚡ Más rápido: ${playerName(fast.playerId)} +1🪙`);
+    const gw = r.results.filter((x) => x.guessTokenWon);
+    if (gw.length) extra.push('🎤 Bonus artista+título: ' + names(gw));
+    $('reveal-extra').textContent = extra.join('  ·  ');
+    const canAdvance = S.you === S.hostId;
+    $('btn-next').classList.toggle('hidden', !canAdvance);
+    return;
+  }
+
+  const who = playerName(r.playerId);
+  const isMe = r.playerId === S.you;
 
   if (r.type === 'buy') {
     out.textContent = `💰 ${isMe ? 'Compraste' : who + ' compró'} la carta con 3 fichas`;
@@ -614,12 +765,18 @@ socket.on('state', (state) => {
     $('inp-guess-title').value = '';
     $('guess-box').removeAttribute('open');
     $('steal-pick').classList.add('hidden');
-    if (!isFirst && state.phase === 'placing' && state.turnPlayerId) {
-      const active = state.players.find((p) => p.id === state.turnPlayerId);
-      const mine = state.turnPlayerId === state.you;
-      showTurnOverlay(active ? active.avatar : '🎧', mine ? '¡Te toca!' : `Turno de ${active ? active.name : '?'}`);
-      SFX.turn();
-      if (mine) vibrate([90, 60, 90]);
+    if (!isFirst && state.phase === 'placing') {
+      if (state.settings.mode === 'simul') {
+        showTurnOverlay('🎵', `Ronda ${state.round}`);
+        SFX.turn();
+        if (!state.isScreen) vibrate(80);
+      } else if (state.turnPlayerId) {
+        const active = state.players.find((p) => p.id === state.turnPlayerId);
+        const mine = state.turnPlayerId === state.you;
+        showTurnOverlay(active ? active.avatar : '🎧', mine ? '¡Te toca!' : `Turno de ${active ? active.name : '?'}`);
+        SFX.turn();
+        if (mine) vibrate([90, 60, 90]);
+      }
     }
   }
 
@@ -627,7 +784,19 @@ socket.on('state', (state) => {
   if (state.phase !== prevPhase && prevPhase !== null) {
     const r = state.lastResult;
     if ((state.phase === 'reveal' || state.phase === 'gameover') && r && prevPhase !== 'reveal') {
-      if (r.correct) {
+      if (r.type === 'simul') {
+        const mine = (r.results || []).find((x) => x.playerId === state.you);
+        if (mine && mine.correct) {
+          SFX.correct();
+          confetti(70, 1800);
+          vibrate(120);
+        } else if (mine) {
+          SFX.wrong();
+          vibrate(220);
+        } else {
+          SFX.turn(); // pantalla TV o espectador
+        }
+      } else if (r.correct) {
         SFX.correct();
         if (r.playerId === state.you) { confetti(70, 1800); vibrate(120); }
       } else if (r.stealWinnerId) {
@@ -645,6 +814,7 @@ socket.on('state', (state) => {
   }
   lastPhase = state.phase;
 
+  syncLookup();
   keepAwake();
   render();
 });
@@ -782,6 +952,7 @@ $('inp-target').addEventListener('input', (e) => {
 
 $('btn-start').addEventListener('click', () => {
   socket.emit('startGame', {
+    mode: segVal('seg-mode'),
     targetCards: +$('inp-target').value,
     allowSteal: $('inp-steal').checked,
     placeSeconds: +segVal('seg-speed'),

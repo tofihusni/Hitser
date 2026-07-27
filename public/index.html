@@ -50,6 +50,12 @@
     </div>
     <ul id="lobby-players" class="player-list"></ul>
     <div id="lobby-settings" class="panel hidden">
+      <label>Modo de juego</label>
+      <div class="seg" id="seg-mode">
+        <button data-v="simul" class="on">🎉 Todos a la vez</button>
+        <button data-v="classic">🎙 Por turnos</button>
+      </div>
+      <p class="hint" style="text-align:left">«Todos a la vez»: cada ronda suena una canción y todos la colocan en su propia línea. El más rápido en acertar gana +1 🪙.</p>
       <label>Cartas para ganar: <b id="lbl-target">10</b></label>
       <input id="inp-target" type="range" min="3" max="15" value="10" />
       <label>Tiempo por turno</label>

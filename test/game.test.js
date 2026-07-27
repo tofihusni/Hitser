@@ -22,7 +22,11 @@ function seededRng(seed = 42) {
 }
 
 function newGame(opts = {}) {
-  const g = new Game(SONGS, { allowSteal: true, targetCards: 10, ...opts }, seededRng());
+  const g = new Game(
+    SONGS,
+    { mode: 'classic', allowSteal: true, targetCards: 10, ...opts },
+    seededRng()
+  );
   g.addPlayer('p1', 'Ana');
   g.addPlayer('p2', 'Beto');
   return g;
@@ -290,6 +294,97 @@ test('las estadísticas registran aciertos, fallos y robos', () => {
   g.reveal();
   assert.strictEqual(p.stats.wrong, 1);
   assert.strictEqual(q.stats.steals, 1);
+});
+
+// ── Modo simultáneo ─────────────────────────────────────────────────────────
+
+function newSimul(opts = {}) {
+  return newGame({ mode: 'simul', ...opts });
+}
+
+test('simul: todos colocan, el acierto suma carta y el fallo no', () => {
+  const g = newSimul();
+  g.start();
+  const [p1, p2] = g.players;
+  const good1 = correctGaps(p1.timeline, g.currentCard.year)[0];
+  let bad2 = -1;
+  for (let i = 0; i <= p2.timeline.length; i++) {
+    if (!isCorrectGap(p2.timeline, i, g.currentCard.year)) { bad2 = i; break; }
+  }
+  g.placeSimul(p1.id, good1);
+  assert.ok(!g.allPlaced());
+  g.placeSimul(p2.id, bad2 === -1 ? correctGaps(p2.timeline, g.currentCard.year)[0] : bad2);
+  assert.ok(g.allPlaced());
+  g.revealSimul();
+  assert.strictEqual(g.phase === 'reveal' || g.phase === 'gameover', true);
+  assert.strictEqual(g.lastResult.type, 'simul');
+  assert.strictEqual(p1.timeline.length, 2);
+  if (bad2 !== -1) assert.strictEqual(p2.timeline.length, 1);
+});
+
+test('simul: no se puede colocar dos veces', () => {
+  const g = newSimul();
+  g.start();
+  const p1 = g.players[0];
+  assert.ok(g.placeSimul(p1.id, 0).ok);
+  assert.ok(g.placeSimul(p1.id, 1).error);
+});
+
+test('simul: el más rápido en acertar gana la ficha extra', () => {
+  const g = newSimul();
+  g.start();
+  const [p1, p2] = g.players;
+  const t1 = p1.tokens;
+  const t2 = p2.tokens;
+  g.placeSimul(p1.id, correctGaps(p1.timeline, g.currentCard.year)[0]);
+  g.placeSimul(p2.id, correctGaps(p2.timeline, g.currentCard.year)[0]);
+  g.revealSimul();
+  const r1 = g.lastResult.results.find((x) => x.playerId === p1.id);
+  const r2 = g.lastResult.results.find((x) => x.playerId === p2.id);
+  assert.strictEqual(r1.firstBonus, true);
+  assert.strictEqual(r2.firstBonus, false);
+  assert.strictEqual(p1.tokens, t1 + 1);
+  assert.strictEqual(p2.tokens, t2);
+});
+
+test('simul: comprar cuesta 3 fichas, garantiza la carta y no da bonus de rapidez', () => {
+  const g = newSimul();
+  g.start();
+  const [p1, p2] = g.players;
+  p1.tokens = 3;
+  assert.ok(g.buySimul(p1.id).ok);
+  assert.strictEqual(p1.tokens, 0);
+  g.placeSimul(p2.id, correctGaps(p2.timeline, g.currentCard.year)[0]);
+  g.revealSimul();
+  const r1 = g.lastResult.results.find((x) => x.playerId === p1.id);
+  assert.strictEqual(r1.correct, true);
+  assert.strictEqual(r1.firstBonus, false);
+  assert.strictEqual(p1.timeline.length, 2);
+});
+
+test('simul: victoria por más cartas y desempate por fichas', () => {
+  const g = newSimul({ targetCards: 2 });
+  g.start();
+  const [p1, p2] = g.players;
+  p1.tokens = 5;
+  p2.tokens = 1;
+  g.placeSimul(p1.id, correctGaps(p1.timeline, g.currentCard.year)[0]);
+  g.placeSimul(p2.id, correctGaps(p2.timeline, g.currentCard.year)[0]);
+  g.revealSimul();
+  // Ambos llegan a 2 cartas a la vez: gana quien tiene más fichas.
+  assert.strictEqual(g.phase, 'gameover');
+  assert.strictEqual(g.winnerId, p1.id);
+});
+
+test('simul: quien no coloca no aparece en resultados ni puntúa', () => {
+  const g = newSimul();
+  g.start();
+  const [p1, p2] = g.players;
+  g.placeSimul(p1.id, correctGaps(p1.timeline, g.currentCard.year)[0]);
+  g.revealSimul(); // p2 no colocó (p. ej. se agotó el tiempo)
+  assert.strictEqual(g.lastResult.results.length, 1);
+  assert.strictEqual(p2.timeline.length, 1);
+  assert.strictEqual(p2.stats.wrong, 0);
 });
 
 test('las canciones reales tienen datos válidos', () => {
