@@ -10,7 +10,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,700;0,900;1,700;1,900&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -57,15 +57,24 @@
   <section id="screen-lobby" class="screen">
     <header class="topbar center">
       <div>
-        <span class="badge">CÓDIGO DE SALA</span>
-        <div id="lobby-code" class="room-code">····</div>
+        <span class="mono-label">Código de sala</span>
+        <div id="lobby-code" class="room-code"></div>
+        <p class="hint">Toca el código para copiarlo</p>
       </div>
     </header>
     <div id="qr-box" class="qr-box hidden">
       <img id="qr-img" alt="QR para unirse" />
       <p class="hint">Escanea para unirte</p>
     </div>
-    <ul id="lobby-players" class="player-list"></ul>
+    <div class="crew-head">
+      <h2>🎤 La banda</h2>
+      <span id="crew-count" class="crew-count">0 / 10</span>
+    </div>
+    <ul id="lobby-players" class="crew-grid"></ul>
+    <div id="crew-empty" class="crew-empty hidden">
+      <span>📡</span>
+      <p>Esperando a más jugadores…</p>
+    </div>
     <div id="lobby-settings" class="panel hidden">
       <label>Modo de juego</label>
       <div class="seg" id="seg-mode">

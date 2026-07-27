@@ -474,19 +474,29 @@ function renderLobby() {
     qr.onerror = () => $('qr-box').classList.add('hidden');
     qr.src = qrSrc;
   }
+  $('crew-count').textContent = `${S.players.length} / 10`;
   const ul = $('lobby-players');
   ul.innerHTML = '';
-  for (const p of S.players) {
+  // El anfitrión primero, con tarjeta destacada a lo ancho.
+  const ordered = [...S.players].sort((a, b) => (b.id === S.hostId) - (a.id === S.hostId));
+  for (const p of ordered) {
+    const host = p.id === S.hostId;
     const li = document.createElement('li');
+    li.className = host ? 'crew-host' : 'crew-card';
     if (p.id === S.you) li.classList.add('me');
     if (!p.connected) li.style.opacity = '.45';
-    li.innerHTML = `<span class="pavatar"></span><span class="pname"></span>
-      ${p.id === S.hostId ? '<span class="host-tag">★ ANFITRIÓN</span>' : ''}
-      <span class="right">${p.id === S.you ? 'tú' : ''}</span>`;
+    li.innerHTML = host
+      ? `<span class="ring"><span class="pavatar"></span><b class="host-badge">ANFITRIÓN</b></span>
+         <span class="cinfo"><span class="pname"></span><span class="cstatus">● listo para pinchar</span></span>
+         <span class="cyou">${p.id === S.you ? 'TÚ' : ''}</span>`
+      : `<span class="pavatar"></span><span class="pname"></span>
+         <span class="cstatus">${p.connected ? '● LISTO' : '○ conectando…'}</span>
+         <span class="cyou">${p.id === S.you ? 'TÚ' : ''}</span>`;
     li.querySelector('.pavatar').textContent = p.avatar || '🎧';
     li.querySelector('.pname').textContent = p.name;
     ul.appendChild(li);
   }
+  $('crew-empty').classList.toggle('hidden', S.players.length >= 10);
   const isHost = S.you === S.hostId;
   $('lobby-settings').classList.toggle('hidden', !isHost || isScreen);
   $('lobby-wait').classList.toggle('hidden', isHost && !isScreen);
