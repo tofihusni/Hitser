@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 
 let S = null; // último estado recibido del servidor
 let session = null; // { code, playerId, secret }
+let isScreen = false; // modo pantalla (TV): espectador sin jugador
 let timerInterval = null;
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ function saveSession() {
 function clearSession() {
   session = null;
   localStorage.removeItem('hitser_session');
+  localStorage.removeItem('hitser_screen');
 }
 
 function me() {
@@ -207,6 +209,35 @@ function renderGame() {
     }
   }
 
+  // Vista TV: enseña las líneas de tiempo de todos los jugadores.
+  if (isScreen && (S.phase === 'placing' || S.phase === 'steal')) {
+    $('watch-box').classList.remove('hidden');
+    $('watch-msg').innerHTML =
+      S.phase === 'steal'
+        ? `<b></b> ya colocó su carta. ¡Momento de robar!`
+        : `<b></b> está colocando la canción en su línea de tiempo…`;
+    $('watch-msg').querySelector('b').textContent = active ? active.name : '?';
+    const cont = $('watch-timeline');
+    cont.innerHTML = '';
+    cont.classList.remove('timeline');
+    for (const p of S.players) {
+      const h = document.createElement('div');
+      h.className = 'tvline-name' + (p.id === S.turnPlayerId ? ' active' : '');
+      h.textContent = `${p.id === S.turnPlayerId ? '🎯 ' : ''}${p.name} · 🎴 ${p.cards} · 🪙 ${p.tokens}`;
+      cont.appendChild(h);
+      const tl = document.createElement('div');
+      tl.className = 'timeline readonly';
+      renderTimeline(tl, p, {});
+      cont.appendChild(tl);
+    }
+    $('steal-offer').classList.add('hidden');
+    $('steal-pick').classList.add('hidden');
+    syncAudio();
+    syncTimer();
+    return;
+  }
+  $('watch-timeline').classList.add('timeline');
+
   if (S.phase === 'placing') {
     if (isMyTurn) {
       $('place-box').classList.remove('hidden');
@@ -328,12 +359,25 @@ function renderGameOver() {
 // ── Eventos de socket ───────────────────────────────────────────────────────
 socket.on('state', (state) => {
   S = state;
+  isScreen = !!state.isScreen;
+  document.body.classList.toggle('screen-mode', isScreen);
   render();
 });
 
 socket.on('errorMsg', (msg) => toast(msg));
 
 socket.on('connect', () => {
+  // Pantalla TV: vuelve a engancharse a la sala tras recarga o reconexión.
+  const screenCode = localStorage.getItem('hitser_screen');
+  if (screenCode) {
+    socket.emit('joinScreen', { code: screenCode }, (res) => {
+      if (!res || !res.ok) {
+        localStorage.removeItem('hitser_screen');
+        showScreen('screen-home');
+      }
+    });
+    return;
+  }
   // Reintenta reconectar a la sesión guardada.
   const saved = localStorage.getItem('hitser_session');
   if (saved && !S) {
@@ -373,6 +417,15 @@ $('btn-join').addEventListener('click', () => {
     if (res.error) return toast(res.error);
     session = { code: res.code, playerId: res.playerId, secret: res.secret };
     saveSession();
+  });
+});
+
+$('btn-screen').addEventListener('click', () => {
+  const code = $('inp-code').value.trim().toUpperCase();
+  if (code.length !== 4) return toast('Escribe el código de la sala para proyectarla');
+  socket.emit('joinScreen', { code }, (res) => {
+    if (res.error) return toast(res.error);
+    localStorage.setItem('hitser_screen', code);
   });
 });
 

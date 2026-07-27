@@ -192,6 +192,20 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .outcome.good { color: var(--accent); }
 .outcome.bad { color: var(--danger); }
 
+/* ── Modo pantalla (TV) ── */
+body.screen-mode .screen { max-width: 1100px; }
+body.screen-mode .room-code { font-size: 56px; }
+body.screen-mode .room-code.small { font-size: 30px; }
+body.screen-mode h1 { font-size: 60px; }
+body.screen-mode .tcard { width: 112px; min-height: 130px; }
+body.screen-mode .tcard .tyear { font-size: 26px; }
+body.screen-mode .reveal-year { font-size: 76px; }
+.tvline-name {
+  font-weight: 700; font-size: 15px; color: var(--muted);
+  margin-top: 8px; padding-left: 4px;
+}
+.tvline-name.active { color: var(--accent); }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);

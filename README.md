@@ -24,6 +24,14 @@ adivina **en qué año salió** y colócala en tu línea de tiempo. Cada jugador
 
 Cada jugador empieza con 1 carta y 2 fichas. De 2 a 10 jugadores.
 
+### 📺 Modo pantalla (TV)
+
+Abre el juego en una tele, proyector o portátil, pulsa **«Modo pantalla (TV)»**
+e introduce el código de la sala: verás el código en grande, las líneas de
+tiempo de **todos** los jugadores, el turno en curso y las revelaciones, y
+podrás reproducir la música para toda la habitación. La pantalla no juega,
+puede unirse en cualquier momento y se reengancha sola si se recarga.
+
 ## Ejecutar
 
 ```bash

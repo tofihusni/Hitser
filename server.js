@@ -91,6 +91,7 @@ class Room {
     this.audio = null; // { previewUrl, artworkUrl } de la carta actual
     this.lastActivity = Date.now();
     this.kickTimers = new Map(); // playerId -> timeout de gracia en el lobby
+    this.screens = new Set(); // sockets en modo pantalla (TV), sin jugador
   }
 
   cancelKick(playerId) {
@@ -127,6 +128,16 @@ class Room {
         timerEndsAt: this.timerEndsAt,
         audio: this.audio,
         ...this.game.viewFor(playerId),
+      });
+    }
+    for (const socket of this.screens) {
+      socket.emit('state', {
+        code: this.code,
+        hostId: this.hostId,
+        timerEndsAt: this.timerEndsAt,
+        audio: this.audio,
+        isScreen: true,
+        ...this.game.viewFor(null),
       });
     }
   }
@@ -183,6 +194,7 @@ function armStealTimer(room) {
 
 io.on('connection', (socket) => {
   let joined = null; // { room, playerId }
+  let joinedScreen = null; // sala a la que este socket está unido como pantalla
 
   const fail = (msg) => socket.emit('errorMsg', msg);
 
@@ -230,6 +242,18 @@ io.on('connection', (socket) => {
     room.touch();
     room.broadcast();
     cb && cb({ ok: true, code: room.code, playerId, secret });
+  });
+
+  // Modo pantalla (TV): espectador sin jugador, puede unirse en cualquier fase.
+  socket.on('joinScreen', ({ code } = {}, cb) => {
+    const room = rooms.get(String(code || '').trim().toUpperCase());
+    if (!room) return cb && cb({ error: 'Sala no encontrada' });
+    if (joinedScreen) joinedScreen.screens.delete(socket);
+    joinedScreen = room;
+    room.screens.add(socket);
+    room.touch();
+    room.broadcast();
+    cb && cb({ ok: true, code: room.code });
   });
 
   socket.on('rejoin', ({ code, playerId, secret } = {}, cb) => {
@@ -354,6 +378,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (joinedScreen) joinedScreen.screens.delete(socket);
     if (!joined) return;
     const { room, playerId } = joined;
     if (room.sockets.get(playerId) === socket) room.sockets.delete(playerId);
