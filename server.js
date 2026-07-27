@@ -124,24 +124,19 @@ class Room {
   }
 
   broadcast() {
+    const common = {
+      code: this.code,
+      hostId: this.hostId,
+      timerEndsAt: this.timerEndsAt,
+      audio: this.audio,
+      audioLoading: !!this.audioLoading,
+      now: Date.now(), // para corregir el desfase de reloj en los clientes
+    };
     for (const [playerId, socket] of this.sockets) {
-      socket.emit('state', {
-        code: this.code,
-        hostId: this.hostId,
-        timerEndsAt: this.timerEndsAt,
-        audio: this.audio,
-        ...this.game.viewFor(playerId),
-      });
+      socket.emit('state', { ...common, ...this.game.viewFor(playerId) });
     }
     for (const socket of this.screens) {
-      socket.emit('state', {
-        code: this.code,
-        hostId: this.hostId,
-        timerEndsAt: this.timerEndsAt,
-        audio: this.audio,
-        isScreen: true,
-        ...this.game.viewFor(null),
-      });
+      socket.emit('state', { ...common, isScreen: true, ...this.game.viewFor(null) });
     }
   }
 }
@@ -173,17 +168,35 @@ async function fetchAudio(songIndex) {
 }
 
 async function startTurn(room) {
+  // Se avisa de inmediato (estado "buscando canción…") y el audio llega en
+  // una segunda emisión, para que nadie escuche la canción del turno anterior.
   room.audio = null;
-  const card = room.game.currentCard;
-  if (card) {
-    room.audio = await fetchAudio(card.songIndex);
-    // Si la partida avanzó mientras buscábamos el audio, no pisar nada.
-    if (room.game.currentCard !== card) return;
-    // Sin audio: modo pista — se enseña título/artista y se juega solo el año.
-    room.game.clueShown = !room.audio;
-  }
+  room.audioLoading = true;
   armPlaceTimer(room);
   room.broadcast();
+  const card = room.game.currentCard;
+  const audio = card ? await fetchAudio(card.songIndex) : null;
+  // Si la partida avanzó mientras buscábamos el audio, no pisar nada.
+  if (room.game.currentCard !== card) return;
+  room.audioLoading = false;
+  if (room.game.phase === 'placing' || room.game.phase === 'steal') {
+    room.audio = audio;
+    // Sin audio: modo pista — se enseña título/artista y se juega solo el año.
+    room.game.clueShown = !audio;
+  }
+  room.broadcast();
+}
+
+// Tras colocar/comprar/revelar, arma el temporizador que toque según la fase.
+function armPhaseTimer(room) {
+  const ph = room.game.phase;
+  if (ph === 'steal') armStealTimer(room);
+  else if (ph === 'reveal') armRevealTimer(room);
+  else if (ph === 'gameover') room.clearTimer();
+}
+
+function anyoneConnected(room) {
+  return room.game.players.some((q) => q.connected);
 }
 
 function armPlaceTimer(room) {
@@ -193,10 +206,11 @@ function armPlaceTimer(room) {
     // Tiempo agotado: colocación automática en un hueco aleatorio.
     const g = room.game;
     if (g.phase !== 'placing') return;
+    if (!anyoneConnected(room)) return; // sala vacía: la partida queda en pausa
     const p = g.activePlayer;
     const gap = Math.floor(Math.random() * (p.timeline.length + 1));
     g.placeCard(p.id, gap);
-    if (g.phase === 'steal') armStealTimer(room);
+    armPhaseTimer(room);
     room.broadcast();
   });
 }
@@ -205,9 +219,57 @@ function armStealTimer(room) {
   room.setTimer(room.game.settings.stealSeconds, () => {
     if (room.game.phase === 'steal') {
       room.game.reveal();
+      armPhaseTimer(room);
       room.broadcast();
     }
   });
+}
+
+// Auto-avance tras la revelación: la partida nunca depende de que alguien
+// concreto pulse "siguiente".
+function armRevealTimer(room) {
+  const secs = room.game.settings.revealSeconds;
+  if (!secs) return;
+  room.setTimer(secs, () => {
+    if (room.game.phase !== 'reveal') return;
+    if (!anyoneConnected(room)) return; // sala vacía: pausa
+    room.game.nextTurn();
+    startTurn(room);
+  });
+}
+
+// En el lobby, un desconectado tiene 60 s de gracia antes de ser expulsado.
+function scheduleLobbyKick(room, playerId) {
+  room.cancelKick(playerId);
+  room.kickTimers.set(
+    playerId,
+    setTimeout(() => {
+      room.kickTimers.delete(playerId);
+      const q = room.game.player(playerId);
+      if (!q || q.connected || room.game.phase !== 'lobby') return;
+      room.game.removePlayer(playerId);
+      room.tokens.delete(playerId);
+      if (room.hostId === playerId) {
+        const next = room.game.players[0];
+        room.hostId = next ? next.id : null;
+      }
+      if (room.game.players.length === 0) {
+        room.clearTimer();
+        rooms.delete(room.code);
+        return;
+      }
+      room.broadcast();
+    }, 60 * 1000)
+  );
+}
+
+// Rearma el temporizador si la partida quedó en pausa por sala vacía.
+function resumeTimers(room) {
+  if (room.timer) return;
+  const ph = room.game.phase;
+  if (ph === 'placing') armPlaceTimer(room);
+  else if (ph === 'steal') armStealTimer(room);
+  else if (ph === 'reveal') armRevealTimer(room);
 }
 
 io.on('connection', (socket) => {
@@ -228,6 +290,7 @@ io.on('connection', (socket) => {
   socket.on('createRoom', ({ name } = {}, cb) => {
     name = String(name || '').trim().slice(0, 16);
     if (!name) return cb && cb({ error: 'Pon tu nombre' });
+    if (rooms.size >= 500) return cb && cb({ error: 'El servidor está lleno, prueba más tarde' });
     const room = new Room(makeCode());
     rooms.set(room.code, room);
     const playerId = crypto.randomUUID();
@@ -282,6 +345,7 @@ io.on('connection', (socket) => {
     if (!p) return cb && cb({ error: 'Jugador no encontrado' });
     p.connected = true;
     bind(room, playerId);
+    resumeTimers(room); // por si la partida quedó en pausa con la sala vacía
     room.touch();
     room.broadcast();
     cb && cb({ ok: true, code: room.code, playerId, secret });
@@ -310,7 +374,7 @@ io.on('connection', (socket) => {
     if (r.error) return fail(r.error);
     room.touch();
     room.clearTimer();
-    if (room.game.phase === 'steal') armStealTimer(room);
+    armPhaseTimer(room);
     room.broadcast();
   });
 
@@ -340,15 +404,30 @@ io.on('connection', (socket) => {
     if (r.error) return fail(r.error);
     room.touch();
     room.clearTimer();
+    armPhaseTimer(room);
     room.broadcast();
   });
 
   socket.on('stealBid', ({ gap } = {}) => {
     if (!joined) return;
     const { room, playerId } = joined;
-    const r = room.game.stealBid(playerId, gap);
+    const g = room.game;
+    const r = g.stealBid(playerId, gap);
     if (r.error) return fail(r.error);
     room.touch();
+    // Si ya no queda nadie que pueda apostar, se revela sin esperar.
+    const pending = g.players.some(
+      (q) =>
+        q.id !== g.activePlayer.id &&
+        q.connected &&
+        q.tokens >= 1 &&
+        !g.stealBids.some((b) => b.playerId === q.id)
+    );
+    if (!pending) {
+      room.clearTimer();
+      g.reveal();
+      armPhaseTimer(room);
+    }
     room.broadcast();
   });
 
@@ -360,6 +439,7 @@ io.on('connection', (socket) => {
     if (room.game.activePlayer.id !== playerId && playerId !== room.hostId) return;
     room.clearTimer();
     room.game.reveal();
+    armPhaseTimer(room);
     room.touch();
     room.broadcast();
   });
@@ -368,9 +448,13 @@ io.on('connection', (socket) => {
     if (!joined) return;
     const { room, playerId } = joined;
     const g = room.game;
-    // Puede avanzar el anfitrión o el jugador que acaba de jugar.
+    // Puede avanzar el anfitrión o el jugador que acaba de jugar; si ninguno
+    // de los dos está conectado, cualquiera.
     const lastPlayerId = g.lastResult ? g.lastResult.playerId : null;
-    if (playerId !== room.hostId && playerId !== lastPlayerId) {
+    const host = g.player(room.hostId);
+    const lastP = g.player(lastPlayerId);
+    const orphaned = (!host || !host.connected) && (!lastP || !lastP.connected);
+    if (playerId !== room.hostId && playerId !== lastPlayerId && !orphaned) {
       return fail('Espera al anfitrión');
     }
     const r = g.nextTurn();
@@ -386,11 +470,18 @@ io.on('connection', (socket) => {
     if (room.game.phase !== 'gameover') return;
     const old = room.game;
     room.game = new Game(SONGS, old.settings);
+    // Se conservan también los desconectados: pueden volver con su sesión, y
+    // si no vuelven en 60 s el lobby los expulsa solo.
     for (const p of old.players) {
-      if (p.connected) room.game.addPlayer(p.id, p.name);
+      const np = room.game.addPlayer(p.id, p.name);
+      if (np) {
+        np.connected = p.connected;
+        if (!p.connected) scheduleLobbyKick(room, p.id);
+      }
     }
     room.clearTimer();
     room.audio = null;
+    room.audioLoading = false;
     room.touch();
     room.broadcast();
   });
@@ -403,29 +494,11 @@ io.on('connection', (socket) => {
     const p = room.game.player(playerId);
     if (p) p.connected = false;
     if (room.game.phase === 'lobby') {
-      // Periodo de gracia: si no vuelve en 60 s, se le saca del lobby.
-      room.cancelKick(playerId);
-      room.kickTimers.set(
-        playerId,
-        setTimeout(() => {
-          room.kickTimers.delete(playerId);
-          const q = room.game.player(playerId);
-          if (!q || q.connected || room.game.phase !== 'lobby') return;
-          room.game.removePlayer(playerId);
-          room.tokens.delete(playerId);
-          if (room.hostId === playerId) {
-            const next = room.game.players[0];
-            room.hostId = next ? next.id : null;
-          }
-          if (room.game.players.length === 0) {
-            room.clearTimer();
-            rooms.delete(room.code);
-            return;
-          }
-          room.broadcast();
-        }, 60 * 1000)
-      );
-    } else if (room.hostId === playerId) {
+      scheduleLobbyKick(room, playerId);
+    }
+    // El rol de anfitrión pasa de inmediato a alguien conectado para que la
+    // sala nunca quede sin control (empezar, avanzar, reiniciar…).
+    if (room.hostId === playerId) {
       const next = room.game.players.find((q) => q.connected);
       if (next) room.hostId = next.id;
     }

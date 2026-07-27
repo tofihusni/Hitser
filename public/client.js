@@ -9,6 +9,8 @@ let S = null; // último estado recibido del servidor
 let session = null; // { code, playerId, secret }
 let isScreen = false; // modo pantalla (TV): espectador sin jugador
 let timerInterval = null;
+let serverOffset = 0; // desfase entre el reloj del servidor y el del cliente
+let lastTurnKey = null; // detecta el cambio de turno para limpiar formularios
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
 function showScreen(id) {
@@ -170,16 +172,39 @@ function syncTimer() {
     fill.style.width = '0%';
     return;
   }
-  const total =
-    (S.phase === 'steal' ? S.settings.stealSeconds : S.settings.placeSeconds) * 1000;
+  const secs =
+    S.phase === 'steal'
+      ? S.settings.stealSeconds
+      : S.phase === 'reveal'
+        ? S.settings.revealSeconds
+        : S.settings.placeSeconds;
+  const total = secs * 1000;
   const tick = () => {
-    const left = S.timerEndsAt - Date.now();
+    // Se usa el reloj del servidor (con desfase corregido) para que la barra
+    // sea fiel aunque el reloj del móvil vaya mal.
+    const left = S.timerEndsAt - (Date.now() + serverOffset);
     fill.style.width = Math.max(0, Math.min(100, (left / total) * 100)) + '%';
     if (left <= 0) clearInterval(timerInterval);
   };
   tick();
   timerInterval = setInterval(tick, 500);
 }
+
+// ── Pantalla siempre encendida durante la partida ───────────────────────────
+let wakeLock = null;
+async function keepAwake() {
+  try {
+    if ('wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => (wakeLock = null));
+    }
+  } catch {
+    /* no soportado o denegado: no pasa nada */
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S) keepAwake();
+});
 
 // ── Render de líneas de tiempo ──────────────────────────────────────────────
 function renderTimeline(el, player, { gaps = false, onGap = null, highlight = null } = {}) {
@@ -280,13 +305,15 @@ function renderGame() {
   const boxes = ['audio-box', 'place-box', 'watch-box', 'stealwait-box', 'reveal-box'];
   boxes.forEach((b) => $(b).classList.add('hidden'));
 
-  const clueMode = !S.audio && S.currentCard && S.currentCard.hidden && S.currentCard.title;
+  const clueMode = !S.audio && !S.audioLoading && S.currentCard && S.currentCard.hidden && S.currentCard.title;
   if (S.phase === 'placing' || S.phase === 'steal') {
     $('audio-box').classList.remove('hidden');
     const noAudio = !S.audio;
     $('btn-play').classList.toggle('hidden', noAudio);
     $('no-audio').classList.toggle('hidden', !noAudio);
-    if (clueMode) {
+    if (S.audioLoading) {
+      $('no-audio').textContent = '⏳ Buscando la canción…';
+    } else if (clueMode) {
       $('no-audio').innerHTML = '🔇 Sin audio — la canción es:<br>«<b></b>» de <b class="clue-artist"></b><br>¿En qué año salió?';
       $('no-audio').querySelector('b').textContent = S.currentCard.title;
       $('no-audio').querySelector('.clue-artist').textContent = S.currentCard.artist;
@@ -424,6 +451,11 @@ function renderGameOver() {
   showScreen('screen-over');
   const winner = S.players.find((p) => p.id === S.winnerId);
   $('winner-name').textContent = winner ? winner.name : '—';
+  // La última carta jugada, para que el final no se quede sin revelación.
+  const last = S.lastResult;
+  $('over-last').textContent = last
+    ? `Última canción: «${last.card.title}» de ${last.card.artist} (${last.card.year})`
+    : '';
   const ul = $('ranking');
   ul.innerHTML = '';
   const sorted = [...S.players].sort(
@@ -446,7 +478,18 @@ function renderGameOver() {
 socket.on('state', (state) => {
   S = state;
   isScreen = !!state.isScreen;
+  if (state.now) serverOffset = state.now - Date.now();
   document.body.classList.toggle('screen-mode', isScreen);
+  // Nuevo turno: limpia el formulario del bonus y los paneles de robo.
+  const turnKey = `${state.round}:${state.turnPlayerId}`;
+  if (turnKey !== lastTurnKey) {
+    lastTurnKey = turnKey;
+    $('inp-guess-artist').value = '';
+    $('inp-guess-title').value = '';
+    $('guess-box').removeAttribute('open');
+    $('steal-pick').classList.add('hidden');
+  }
+  keepAwake();
   render();
 });
 
