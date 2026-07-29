@@ -12,6 +12,15 @@ const SONGS = require('./data/songs');
 
 const spotify = new Spotify();
 
+// Un fallo aislado no debe tumbar el proceso: si lo hiciera, todas las salas
+// en memoria se perderían y nadie podría unirse a su partida.
+process.on('unhandledRejection', (err) => {
+  console.error('Promesa sin capturar (la partida continúa):', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Excepción sin capturar (la partida continúa):', err);
+});
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -709,8 +718,23 @@ io.on('connection', (socket) => {
   });
 });
 
+// En alojamientos gratuitos el servicio se duerme tras unos minutos sin
+// tráfico y luego tarda ~30 s en despertar (justo cuando alguien intenta
+// unirse). Si la plataforma nos da la URL pública, nos hacemos ping cada 10
+// minutos para seguir despiertos. Se desactiva con KEEP_AWAKE=0.
+function keepAwake() {
+  const url = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL;
+  if (!url || process.env.KEEP_AWAKE === '0') return;
+  const ping = () => {
+    fetch(`${url.replace(/\/$/, '')}/health`).catch(() => {});
+  };
+  setInterval(ping, 10 * 60 * 1000).unref();
+  console.log(`⏰ Auto-ping activado para no dormirse: ${url}/health`);
+}
+
 server.listen(PORT, () => {
   console.log(`🎵 Hitser escuchando en http://localhost:${PORT}`);
+  keepAwake();
   console.log(
     spotify.isConfigured()
       ? '🟢 Spotify activado: canciones vía embed oficial (completas con sesión iniciada)'

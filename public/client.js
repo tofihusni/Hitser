@@ -2,8 +2,53 @@
 
 /* Cliente de Hitser: una sola página, estados dirigidos por el servidor. */
 
-const socket = io();
+const socket = io({ reconnectionDelayMax: 4000 });
 const $ = (id) => document.getElementById(id);
+
+// ── Estado de conexión ──────────────────────────────────────────────────────
+// El juego no funciona sin servidor, así que hay que decirlo claramente. En
+// alojamientos gratuitos el servidor «duerme» y tarda ~30 s en despertar: si
+// pulsas Crear/Unirse sin conexión, la acción queda pendiente y se ejecuta
+// automáticamente en cuanto el servidor responde.
+let pendingAction = null; // () => void
+let netTimer = null;
+let netWasDown = false; // para no molestar con avisos en la carga normal
+
+function setNet(state, msg) {
+  const bar = $('net-bar');
+  clearTimeout(netTimer);
+  if (state === 'ok') {
+    // Solo se confirma si antes hubo un corte; si no, no se muestra nada.
+    if (!netWasDown) {
+      bar.classList.add('hidden');
+      document.body.classList.remove('net-down');
+      return;
+    }
+    netWasDown = false;
+    bar.textContent = msg || '✅ Conectado';
+    bar.classList.add('ok');
+    bar.classList.remove('hidden');
+    document.body.classList.remove('net-down');
+    netTimer = setTimeout(() => bar.classList.add('hidden'), 1800);
+    return;
+  }
+  netWasDown = true;
+  bar.textContent = msg;
+  bar.classList.remove('ok', 'hidden');
+  document.body.classList.add('net-down');
+}
+
+// Ejecuta una acción que necesita servidor; si no hay conexión, la deja
+// pendiente y avisa al usuario en lugar de no hacer nada.
+function withServer(label, fn) {
+  if (socket.connected) return fn();
+  pendingAction = fn;
+  setNet(
+    'wait',
+    '⏳ Despertando el servidor… ' + label + ' en cuanto responda'
+  );
+  toast('⏳ Conectando con el servidor, un momento…');
+}
 
 let S = null; // último estado recibido del servidor
 let session = null; // { code, playerId, secret }
@@ -964,6 +1009,14 @@ socket.on('reaction', ({ name, emoji }) => {
 socket.on('errorMsg', (msg) => toast(msg));
 
 socket.on('connect', () => {
+  setNet('ok', '✅ Conectado al servidor');
+  // Si el usuario intentó crear/unirse sin conexión, se hace ahora.
+  if (pendingAction) {
+    const fn = pendingAction;
+    pendingAction = null;
+    fn();
+    return;
+  }
   // Pantalla TV: vuelve a engancharse a la sala tras recarga o reconexión.
   const screenCode = sessionStorage.getItem('hitser_screen');
   if (screenCode) {
@@ -983,8 +1036,11 @@ socket.on('connect', () => {
       if (res && res.ok) {
         session = sess;
       } else {
+        // La sala ya no existe (p. ej. el servidor se reinició): se explica.
         clearSession();
+        S = null;
         showScreen('screen-home');
+        toast('La partida anterior ya no existe. Crea una sala nueva 🎵');
       }
     });
   } else if (session) {
@@ -992,7 +1048,16 @@ socket.on('connect', () => {
   }
 });
 
-socket.on('disconnect', () => toast('Conexión perdida, reconectando…'));
+socket.on('disconnect', () => {
+  setNet('down', '🔌 Sin conexión con el servidor — reconectando…');
+});
+socket.on('connect_error', () => {
+  setNet('down', '🔌 No se alcanza el servidor — reintentando…');
+});
+// Al arrancar, si en 2 s no hay conexión, se avisa (no se deja en blanco).
+setTimeout(() => {
+  if (!socket.connected) setNet('down', '⏳ Conectando con el servidor…');
+}, 2000);
 
 // ── Botones ─────────────────────────────────────────────────────────────────
 // Selector de avatar
@@ -1015,14 +1080,39 @@ function renderAvatarRow() {
 }
 renderAvatarRow();
 
+// Respuesta del servidor a crear/unirse, con aviso si no llega.
+function handleEntry(res, btn, original) {
+  btn.disabled = false;
+  btn.textContent = original;
+  if (!res) {
+    return toast('El servidor no responde. Espera unos segundos y reinténtalo.');
+  }
+  if (res.error) {
+    if (/no encontrada/i.test(res.error)) {
+      return toast('Sala no encontrada. Puede que el servidor se reiniciara: crea una sala nueva.');
+    }
+    return toast(res.error);
+  }
+  session = { code: res.code, playerId: res.playerId, secret: res.secret };
+  saveSession();
+}
+
+function entryEmit(btn, waitLabel, event, payload) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = waitLabel;
+  // Si el servidor no contesta en 12 s (arranque en frío), se avisa.
+  socket.timeout(12000).emit(event, payload, (err, res) => {
+    handleEntry(err ? null : res, btn, original);
+  });
+}
+
 $('btn-create').addEventListener('click', () => {
   const name = $('inp-name').value.trim();
   if (!name) return toast('Pon tu nombre');
-  socket.emit('createRoom', { name, avatar: myAvatar }, (res) => {
-    if (res.error) return toast(res.error);
-    session = { code: res.code, playerId: res.playerId, secret: res.secret };
-    saveSession();
-  });
+  withServer('crearé la sala', () =>
+    entryEmit($('btn-create'), '⏳ Creando sala…', 'createRoom', { name, avatar: myAvatar })
+  );
 });
 
 $('btn-join').addEventListener('click', () => {
@@ -1030,11 +1120,9 @@ $('btn-join').addEventListener('click', () => {
   const code = $('inp-code').value.trim().toUpperCase();
   if (!name) return toast('Pon tu nombre');
   if (code.length !== 4) return toast('El código tiene 4 letras');
-  socket.emit('joinRoom', { code, name, avatar: myAvatar }, (res) => {
-    if (res.error) return toast(res.error);
-    session = { code: res.code, playerId: res.playerId, secret: res.secret };
-    saveSession();
-  });
+  withServer('te uniré a la sala', () =>
+    entryEmit($('btn-join'), '⏳ Entrando…', 'joinRoom', { code, name, avatar: myAvatar })
+  );
 });
 
 // Selectores segmentados de los ajustes
