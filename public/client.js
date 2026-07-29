@@ -125,12 +125,17 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.add('hidden'), 3000);
 }
 
+// La sesión de partida vive en sessionStorage (por PESTAÑA), no en
+// localStorage: si no, dos pestañas del mismo navegador comparten identidad,
+// se roban el jugador y acaban expulsándose la una a la otra.
 function saveSession() {
-  if (session) localStorage.setItem('hitser_session', JSON.stringify(session));
+  if (session) sessionStorage.setItem('hitser_session', JSON.stringify(session));
 }
 function clearSession() {
   session = null;
-  localStorage.removeItem('hitser_session');
+  sessionStorage.removeItem('hitser_session');
+  sessionStorage.removeItem('hitser_screen');
+  localStorage.removeItem('hitser_session'); // limpieza de versiones antiguas
   localStorage.removeItem('hitser_screen');
 }
 
@@ -553,19 +558,46 @@ function renderGame() {
   const isMyTurn = !simul && S.turnPlayerId === S.you;
   const active = S.players.find((p) => p.id === S.turnPlayerId);
 
-  // Banner de turno / ronda
+  // ── Quién juega ahora (visible en todos los dispositivos) ──
+  const hero = $('turn-hero');
+  const hTitle = $('turn-hero-title');
+  const hSub = $('turn-hero-sub');
+  const hAv = $('turn-hero-avatar');
+  const connected = S.players.filter((p) => p.connected);
+  const missing = connected.filter((p) => !S.placedIds.includes(p.id));
+  const iPlaced = simul && !!S.myPlacement;
+
   if (simul) {
+    hero.classList.toggle('mine', S.phase === 'placing' && !iPlaced && !isScreen);
+    hAv.textContent = S.phase === 'reveal' || S.phase === 'gameover' ? '🎬' : '🎵';
     if (S.phase === 'placing') {
-      const total = S.players.filter((p) => p.connected).length;
-      $('turn-banner').innerHTML = `<span class="you">🎵 ¡Coloca la canción! (${S.placedIds.length}/${total})</span>`;
+      hTitle.textContent = isScreen
+        ? `Ronda ${S.round}`
+        : iPlaced
+          ? 'Carta colocada'
+          : '¡Te toca colocar!';
+      hSub.textContent = missing.length
+        ? `Faltan: ${missing.map((p) => p.name).join(', ')} · ${S.placedIds.length}/${connected.length}`
+        : 'Revelando…';
     } else {
-      $('turn-banner').textContent = '';
+      const notReady = connected.filter((p) => !(S.readyIds || []).includes(p.id));
+      hTitle.textContent = `Ronda ${S.round} · resultados`;
+      hSub.textContent = notReady.length
+        ? `Esperando a: ${notReady.map((p) => p.name).join(', ')}`
+        : 'Siguiente ronda…';
     }
   } else {
-    $('turn-banner').innerHTML = isMyTurn
-      ? '<span class="you">🎯 ¡Es tu turno!</span>'
-      : `Turno de <b></b>`;
-    if (!isMyTurn) $('turn-banner').querySelector('b').textContent = active ? active.name : '?';
+    // Clásico: se anuncia claramente de quién es el turno.
+    hero.classList.toggle('mine', isMyTurn);
+    hAv.textContent = active ? active.avatar || '🎧' : '🎧';
+    hTitle.textContent = isMyTurn ? '¡Es tu turno!' : `Turno de ${active ? active.name : '?'}`;
+    const phaseTxt = {
+      placing: 'Coloca la canción en tu línea',
+      steal: 'Ventana de robo abierta',
+      reveal: 'Resultado de la ronda',
+      gameover: 'Fin de la partida',
+    };
+    hSub.textContent = `Ronda ${S.round} · ${phaseTxt[S.phase] || ''}`;
   }
 
   // Cajas visibles según fase y rol
@@ -752,8 +784,7 @@ function renderReveal() {
     const sb = r.results.filter((x) => x.streakBonus);
     for (const x of sb) extra.push(`🔥 ¡Racha de ${x.streak} de ${playerName(x.playerId)}! +1🪙`);
     $('reveal-extra').textContent = extra.join('  ·  ');
-    const canAdvance = S.you === S.hostId;
-    $('btn-next').classList.toggle('hidden', !canAdvance);
+    renderNextButton();
     return;
   }
 
@@ -788,8 +819,34 @@ function renderReveal() {
   }
   $('reveal-extra').textContent = extra.join(' · ');
 
-  const canAdvance = S.you === S.hostId || S.you === r.playerId;
-  $('btn-next').classList.toggle('hidden', !canAdvance);
+  renderNextButton();
+}
+
+// Botón de avance compartido: todos pueden marcar «listo»; cuando todos lo
+// están, la ronda avanza. El anfitrión además puede saltar la espera.
+function renderNextButton() {
+  const btn = $('btn-next');
+  const force = $('btn-force');
+  if (isScreen) {
+    btn.classList.add('hidden');
+    force.classList.add('hidden');
+    return;
+  }
+  const connected = S.players.filter((p) => p.connected);
+  const ready = S.readyIds || [];
+  const iAmReady = ready.includes(S.you);
+  btn.classList.remove('hidden');
+  btn.disabled = iAmReady;
+  btn.textContent = iAmReady
+    ? `✓ Listo (${ready.length}/${connected.length})`
+    : connected.length > 1
+      ? `➡ Siguiente ronda (${ready.length}/${connected.length})`
+      : '➡ Siguiente ronda';
+  // Saltar la espera: para el anfitrión, o para cualquiera si el anfitrión no está.
+  const host = S.players.find((p) => p.id === S.hostId);
+  const hostDown = !host || !host.connected;
+  const canForce = (S.you === S.hostId || hostDown) && ready.length < connected.length;
+  force.classList.toggle('hidden', !canForce);
 }
 
 function renderGameOver() {
@@ -908,18 +965,18 @@ socket.on('errorMsg', (msg) => toast(msg));
 
 socket.on('connect', () => {
   // Pantalla TV: vuelve a engancharse a la sala tras recarga o reconexión.
-  const screenCode = localStorage.getItem('hitser_screen');
+  const screenCode = sessionStorage.getItem('hitser_screen');
   if (screenCode) {
     socket.emit('joinScreen', { code: screenCode }, (res) => {
       if (!res || !res.ok) {
-        localStorage.removeItem('hitser_screen');
+        sessionStorage.removeItem('hitser_screen');
         showScreen('screen-home');
       }
     });
     return;
   }
-  // Reintenta reconectar a la sesión guardada.
-  const saved = localStorage.getItem('hitser_session');
+  // Reintenta reconectar a la sesión guardada (de ESTA pestaña).
+  const saved = sessionStorage.getItem('hitser_session');
   if (saved && !S) {
     const sess = JSON.parse(saved);
     socket.emit('rejoin', sess, (res) => {
@@ -1015,7 +1072,7 @@ $('btn-screen').addEventListener('click', () => {
   if (code.length !== 4) return toast('Escribe el código de la sala para proyectarla');
   socket.emit('joinScreen', { code }, (res) => {
     if (res.error) return toast(res.error);
-    localStorage.setItem('hitser_screen', code);
+    sessionStorage.setItem('hitser_screen', code);
   });
 });
 
@@ -1067,6 +1124,7 @@ $('btn-skip').addEventListener('click', () => socket.emit('skipSong'));
 $('btn-buy').addEventListener('click', () => socket.emit('buyCard'));
 $('btn-resolve').addEventListener('click', () => socket.emit('resolveSteal'));
 $('btn-next').addEventListener('click', () => socket.emit('nextTurn'));
+$('btn-force').addEventListener('click', () => socket.emit('forceNext'));
 $('btn-again').addEventListener('click', () => socket.emit('playAgain'));
 
 $('btn-steal').addEventListener('click', () => {

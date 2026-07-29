@@ -131,6 +131,7 @@ class Room {
     this.screens = new Set(); // sockets en modo pantalla (TV), sin jugador
     this.lookupTerm = null; // término de búsqueda para que los navegadores resuelvan el audio
     this.lookupTimer = null; // plazo para caer al modo pista si nadie encuentra audio
+    this.readyNext = new Set(); // quién ya pulsó «siguiente» en la revelación
   }
 
   clearLookup() {
@@ -174,6 +175,7 @@ class Room {
       audio: this.audio,
       audioLoading: !!this.audioLoading,
       lookup: this.audio ? null : this.lookupTerm,
+      readyIds: [...this.readyNext],
       now: Date.now(), // para corregir el desfase de reloj en los clientes
     };
     for (const [playerId, socket] of this.sockets) {
@@ -216,6 +218,7 @@ async function startTurn(room) {
   // una segunda emisión, para que nadie escuche la canción del turno anterior.
   room.audio = null;
   room.audioLoading = true;
+  room.readyNext.clear();
   room.clearLookup();
   armPlaceTimer(room);
   room.broadcast();
@@ -556,23 +559,43 @@ io.on('connection', (socket) => {
     room.broadcast();
   });
 
+  // Avanzar de ronda es cosa de todos: cada jugador marca «listo» y en cuanto
+  // todos los conectados lo están, se pasa a la siguiente ronda. El anfitrión
+  // puede forzarlo con `forceNext` si alguien se despista.
+  function advanceRound(room) {
+    const r = room.game.nextTurn();
+    if (r.error) return r;
+    room.readyNext.clear();
+    room.clearTimer();
+    startTurn(room);
+    return { ok: true };
+  }
+
   socket.on('nextTurn', () => {
     if (!joined) return;
     const { room, playerId } = joined;
     const g = room.game;
-    // Puede avanzar el anfitrión o el jugador que acaba de jugar; si ninguno
-    // de los dos está conectado, cualquiera.
-    const lastPlayerId = g.lastResult ? g.lastResult.playerId : null;
-    const host = g.player(room.hostId);
-    const lastP = g.player(lastPlayerId);
-    const orphaned = (!host || !host.connected) && (!lastP || !lastP.connected);
-    if (playerId !== room.hostId && playerId !== lastPlayerId && !orphaned) {
-      return fail('Espera al anfitrión');
-    }
-    const r = g.nextTurn();
-    if (r.error) return fail(r.error);
+    if (g.phase !== 'reveal') return;
+    if (!g.player(playerId)) return;
+    room.readyNext.add(playerId);
     room.touch();
-    startTurn(room);
+    const connected = g.players.filter((q) => q.connected);
+    const allReady = connected.length > 0 && connected.every((q) => room.readyNext.has(q.id));
+    if (allReady) advanceRound(room);
+    else room.broadcast();
+  });
+
+  socket.on('forceNext', () => {
+    if (!joined) return;
+    const { room, playerId } = joined;
+    const g = room.game;
+    if (g.phase !== 'reveal') return;
+    // El anfitrión fuerza; si no está conectado, cualquiera puede desatascar.
+    const host = g.player(room.hostId);
+    const hostDown = !host || !host.connected;
+    if (playerId !== room.hostId && !hostDown) return fail('Solo el anfitrión puede saltar');
+    room.touch();
+    advanceRound(room);
   });
 
   socket.on('playAgain', () => {
@@ -593,6 +616,7 @@ io.on('connection', (socket) => {
     }
     room.clearTimer();
     room.clearLookup();
+    room.readyNext.clear();
     room.audio = null;
     room.audioLoading = false;
     room.touch();
@@ -673,6 +697,14 @@ io.on('connection', (socket) => {
     }
     // Simultáneo: si el que se fue era el único que faltaba por colocar, revela.
     maybeRevealSimul(room);
+    // Si se fue el único que faltaba por pulsar «siguiente», avanza la ronda.
+    if (room.game.phase === 'reveal') {
+      const conn = room.game.players.filter((q) => q.connected);
+      if (conn.length && conn.every((q) => room.readyNext.has(q.id))) {
+        advanceRound(room);
+        return;
+      }
+    }
     room.broadcast();
   });
 });

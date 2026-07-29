@@ -132,7 +132,14 @@
 
     <div id="players-strip"></div>
 
-    <div id="turn-banner" class="turn-banner"></div>
+    <!-- Quién juega ahora: siempre visible en todos los dispositivos -->
+    <div id="turn-hero" class="turn-hero">
+      <span id="turn-hero-avatar" class="turn-hero-avatar"></span>
+      <span class="turn-hero-txt">
+        <b id="turn-hero-title"></b>
+        <small id="turn-hero-sub"></small>
+      </span>
+    </div>
 
     <!-- Reproductor -->
     <div id="audio-box" class="audio-box hidden">
@@ -194,7 +201,8 @@
       <p id="reveal-outcome" class="outcome"></p>
       <p id="reveal-extra" class="hint"></p>
       <div id="reveal-timeline" class="timeline readonly hidden"></div>
-      <button id="btn-next" class="btn primary hidden">➡ Siguiente turno</button>
+      <button id="btn-next" class="btn primary hidden">➡ Siguiente ronda</button>
+      <button id="btn-force" class="btn ghost hidden">⏭ Saltar espera</button>
     </div>
 
     <!-- Barra de reacciones -->
