@@ -532,11 +532,11 @@ io.on('connection', (socket) => {
     room.broadcast();
   });
 
-  socket.on('stealBid', ({ gap } = {}) => {
+  socket.on('stealBid', ({ gap, artist, title } = {}) => {
     if (!joined) return;
     const { room, playerId } = joined;
     const g = room.game;
-    const r = g.stealBid(playerId, gap);
+    const r = g.stealBid(playerId, gap, { artist, title });
     if (r.error) return fail(r.error);
     room.touch();
     // Si ya no queda nadie que pueda apostar, se revela sin esperar.

@@ -26,8 +26,11 @@ adivina **en qué año salió** y colócala en tu línea de tiempo. Cada jugador
 
 - **Ganar fichas**: durante tu turno, adivina **artista y título** de la canción (+1 ficha).
 - **Cambiar canción** (1 🪙): no conoces la canción, pide otra.
-- **Robar** (1 🪙): cuando otro jugador coloca su carta, apuesta a que falló y elige
-  dónde iría en **tu** línea. Si él falla y tú aciertas, la carta es tuya.
+- **Robar** (1 🪙): cuando otro jugador coloca su carta, apuesta a que falló.
+  Para quitársela tienes que hacer **dos cosas bien**: escribir el **título y
+  el artista** de la canción y acertar dónde iría en **tu** línea de tiempo.
+  Si él falla y tú lo clavas todo, la carta es tuya. Se admiten erratas y
+  mayúsculas al escribir.
 - **Comprarla** (3 🪙): la carta se coloca automáticamente en el lugar correcto.
 
 Cada jugador empieza con 1 carta y 2 fichas. De 2 a 10 jugadores.

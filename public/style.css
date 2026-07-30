@@ -511,6 +511,12 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .timeline.readonly .gap-btn { display: none; }
 
 .guess { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 13px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.steal-guess {
+  display: flex; flex-direction: column; gap: 10px;
+  background: linear-gradient(165deg, rgba(255,75,137,.14), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,75,137,.35); border-radius: 16px; padding: 16px;
+  animation: pop .3s ease;
+}
 .guess summary { cursor: pointer; font-weight: 700; font-size: 15px; }
 .token-actions { display: flex; gap: 8px; }
 .token-actions .btn { flex: 1; font-size: 13.5px; padding: 12px 6px; white-space: nowrap; }

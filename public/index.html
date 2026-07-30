@@ -179,10 +179,18 @@
       <div id="watch-timeline" class="timeline readonly"></div>
       <div id="steal-offer" class="hidden">
         <button id="btn-steal" class="btn danger big">🏴‍☠️ ¡Robar! · 1🪙</button>
-        <p class="hint">Si falló y tú aciertas dónde va en TU línea, te la llevas</p>
+        <p class="hint">Para robar tienes que acertar <b>título y artista</b> y dónde va en TU línea</p>
+      </div>
+      <div id="steal-guess" class="steal-guess hidden">
+        <p class="instruct">🎤 ¿Qué canción es? Escríbelo para robar:</p>
+        <input id="inp-steal-title" placeholder="Título de la canción" autocomplete="off" />
+        <input id="inp-steal-artist" placeholder="Artista" autocomplete="off" />
+        <button id="btn-steal-next" class="btn danger">Continuar →</button>
+        <button id="btn-steal-cancel" class="btn ghost small-btn">Cancelar</button>
       </div>
       <div id="steal-pick" class="hidden">
-        <p class="instruct">Elige dónde va en <b>tu línea de tiempo</b>:</p>
+        <p class="instruct">Y ahora, ¿dónde va en <b>tu línea de tiempo</b>?</p>
+        <p id="steal-recap" class="hint"></p>
         <div id="steal-timeline" class="timeline"></div>
       </div>
     </div>
@@ -248,6 +256,7 @@
         <li><b>2. Colócala en tu línea de tiempo</b><br />¿Salió antes, entre o después de tus cartas? Toca el hueco correcto. ¡Todos juegan a la vez!</li>
         <li><b>3. Gana cartas y fichas 🪙</b><br />Acierta y la carta es tuya. El más rápido gana ficha extra, 3 aciertos seguidos también, y adivinar artista y título suma otra.</li>
         <li><b>4. Primero en llenar su línea gana 🏆</b><br />Las fichas sirven para comprar una colocación segura (3 🪙).</li>
+        <li><b>🏴‍☠️ Robar (modo por turnos)</b><br />Paga 1 🪙 cuando otro coloque su carta: para quitársela tienes que escribir el <b>título y el artista</b> correctos <i>y</i> acertar dónde va en tu línea.</li>
       </ol>
       <button id="btn-help-close" class="btn primary big">¡Entendido, a jugar!</button>
     </div>

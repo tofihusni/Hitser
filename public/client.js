@@ -58,6 +58,9 @@ let serverOffset = 0; // desfase entre el reloj del servidor y el del cliente
 let lastTurnKey = null; // detecta el cambio de turno para limpiar formularios
 let lastPhase = null; // detecta transiciones para sonidos y confeti
 let helpAutoShown = false; // las reglas se auto-muestran solo una vez por sesión
+// Paso en el que está el jugador al robar: null | 'guess' | 'pick'. Se guarda
+// aquí para que una actualización del servidor no borre el formulario a medias.
+let stealStep = null;
 
 // ── Avatares ────────────────────────────────────────────────────────────────
 const AVATARS = ['🎧', '🎸', '🎤', '🥁', '🎹', '🎺', '🪩', '🎷', '🌟', '🔥'];
@@ -698,6 +701,7 @@ function renderGame() {
     }
     $('steal-offer').classList.add('hidden');
     $('steal-pick').classList.add('hidden');
+    $('steal-guess').classList.add('hidden');
     syncAudio();
     syncTimer();
     return;
@@ -722,6 +726,7 @@ function renderGame() {
       renderTimeline($('watch-timeline'), my || S.players[0], {});
       $('steal-offer').classList.add('hidden');
       $('steal-pick').classList.add('hidden');
+    $('steal-guess').classList.add('hidden');
     }
     syncAudio();
     syncTimer();
@@ -744,6 +749,7 @@ function renderGame() {
       renderTimeline($('watch-timeline'), active, {});
       $('steal-offer').classList.add('hidden');
       $('steal-pick').classList.add('hidden');
+    $('steal-guess').classList.add('hidden');
     }
   }
 
@@ -755,12 +761,17 @@ function renderGame() {
       const alreadyBid = S.stealBids.some((b) => b.playerId === S.you);
       const canBid = my && my.tokens >= 1 && !alreadyBid;
       $('watch-msg').innerHTML = alreadyBid
-        ? '🏴‍☠️ Apuesta hecha. Cruzemos los dedos…'
+        ? '🏴‍☠️ Apuesta hecha. Crucemos los dedos…'
         : `<b></b> ya colocó su carta. ¿Crees que falló?`;
       if (!alreadyBid) $('watch-msg').querySelector('b').textContent = active ? active.name : '?';
       renderTimeline($('watch-timeline'), active, {});
-      $('steal-offer').classList.toggle('hidden', !canBid);
-      $('steal-pick').classList.add('hidden');
+      // Si el jugador está a medio robar, se respeta su paso actual para que
+      // una actualización del servidor no le borre lo que estaba escribiendo.
+      const step = canBid ? stealStep : null;
+      if (!canBid) stealStep = null;
+      $('steal-offer').classList.toggle('hidden', !canBid || !!step);
+      $('steal-guess').classList.toggle('hidden', step !== 'guess');
+      $('steal-pick').classList.toggle('hidden', step !== 'pick');
     }
   }
 
@@ -859,8 +870,25 @@ function renderReveal() {
     else if (r.guessResult.titleOk) extra.push('🎤 Título correcto, pero el artista no');
     else extra.push('🎤 La respuesta del bonus no era correcta');
   }
-  if (r.stealBids && r.stealBids.length && r.correct) {
-    extra.push(`Las ${r.stealBids.length} apuesta(s) de robo se pierden`);
+  // Detalle de cada intento de robo: qué acertó y qué no.
+  for (const b of r.stealBids || []) {
+    if (b.won) continue; // el robo ganador ya se anuncia arriba
+    const mio = b.playerId === S.you;
+    const quien = mio ? 'Tú' : playerName(b.playerId);
+    const verbo = mio ? 'fallaste' : 'falló';
+    const fallos = [];
+    if (!b.gapOk) fallos.push('la posición');
+    if (!b.titleOk) fallos.push('el título');
+    if (!b.artistOk) fallos.push('el artista');
+    const lista =
+      fallos.length > 1
+        ? fallos.slice(0, -1).join(', ') + ' y ' + fallos[fallos.length - 1]
+        : fallos[0];
+    extra.push(
+      fallos.length
+        ? `🏴‍☠️ ${quien} ${verbo} ${lista}`
+        : `🏴‍☠️ ${quien} lo clavó, pero ${who} no falló la colocación`
+    );
   }
   $('reveal-extra').textContent = extra.join(' · ');
 
@@ -939,7 +967,11 @@ socket.on('state', (state) => {
     $('inp-guess-artist').value = '';
     $('inp-guess-title').value = '';
     $('guess-box').removeAttribute('open');
+    stealStep = null;
+    $('inp-steal-title').value = '';
+    $('inp-steal-artist').value = '';
     $('steal-pick').classList.add('hidden');
+    $('steal-guess').classList.add('hidden');
     if (!isFirst && state.phase === 'placing') {
       if (state.settings.mode === 'simul') {
         showTurnOverlay('🎵', `Ronda ${state.round}`);
@@ -1215,13 +1247,35 @@ $('btn-next').addEventListener('click', () => socket.emit('nextTurn'));
 $('btn-force').addEventListener('click', () => socket.emit('forceNext'));
 $('btn-again').addEventListener('click', () => socket.emit('playAgain'));
 
+// Robar tiene dos pasos: primero decir qué canción es (título y artista) y
+// después elegir dónde iría en tu propia línea de tiempo.
 $('btn-steal').addEventListener('click', () => {
+  stealStep = 'guess';
   $('steal-offer').classList.add('hidden');
+  $('steal-guess').classList.remove('hidden');
+  $('inp-steal-title').focus();
+});
+
+$('btn-steal-cancel').addEventListener('click', () => {
+  stealStep = null;
+  $('steal-guess').classList.add('hidden');
+  $('steal-pick').classList.add('hidden');
+  $('steal-offer').classList.remove('hidden');
+});
+
+$('btn-steal-next').addEventListener('click', () => {
+  const title = $('inp-steal-title').value.trim();
+  const artist = $('inp-steal-artist').value.trim();
+  if (!title || !artist) return toast('Escribe el título y el artista para robar');
+  stealStep = 'pick';
+  $('steal-guess').classList.add('hidden');
   $('steal-pick').classList.remove('hidden');
+  $('steal-recap').textContent = `Tu respuesta: «${title}» de ${artist}`;
   renderTimeline($('steal-timeline'), me(), {
     gaps: true,
     onGap: (g) => {
-      socket.emit('stealBid', { gap: g });
+      stealStep = null;
+      socket.emit('stealBid', { gap: g, title, artist });
       $('steal-pick').classList.add('hidden');
     },
   });
